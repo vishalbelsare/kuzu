@@ -20,31 +20,14 @@ uint64_t CardinalityEstimator::estimateScanNode(LogicalOperator* op) {
     return atLeastOne(getNodeIDDom(scanNode->getNode()->getInternalIDPropertyName()));
 }
 
-// Although we may not flatten join key in Build operator computation. We do need to calculate join
-// cardinality based on flat join key cardinality.
-static uint64_t getJoinKeysFlatCardinality(
-    const binder::expression_vector& joinNodeIDs, const LogicalPlan& buildPlan) {
-    auto schema = buildPlan.getSchema();
-    f_group_pos_set unFlatGroupsPos;
-    for (auto& joinID : joinNodeIDs) {
-        auto groupPos = schema->getGroupPos(*joinID);
-        if (!schema->getGroup(groupPos)->isFlat()) {
-            unFlatGroupsPos.insert(groupPos);
-        }
-    }
-    auto cardinality = buildPlan.getCardinality();
-    for (auto groupPos : unFlatGroupsPos) {
-        cardinality *= schema->getGroup(groupPos)->getMultiplier();
-    }
-    return cardinality;
-}
-
 uint64_t CardinalityEstimator::estimateHashJoin(const binder::expression_vector& joinNodeIDs,
     const LogicalPlan& probePlan, const LogicalPlan& buildPlan) {
     auto denominator = 1u;
     for (auto& joinNodeID : joinNodeIDs) {
         denominator *= getNodeIDDom(joinNodeID->getUniqueName());
     }
+    // Although we may not flatten join key in Build operator computation. We do need to calculate
+    // join cardinality based on flat join key cardinality.
     return atLeastOne(probePlan.estCardinality *
                       getJoinKeysFlatCardinality(joinNodeIDs, buildPlan) / denominator);
 }
@@ -122,6 +105,23 @@ double CardinalityEstimator::getExtensionRate(
     auto numBoundNodes = (double)getNumNodes(boundNode);
     auto numRels = (double)getNumRels(rel);
     return numRels / numBoundNodes;
+}
+
+uint64_t CardinalityEstimator::getJoinKeysFlatCardinality(
+    const binder::expression_vector& joinNodeIDs, const kuzu::planner::LogicalPlan& buildPlan) {
+    auto schema = buildPlan.getSchema();
+    f_group_pos_set unFlatGroupsPos;
+    for (auto& joinID : joinNodeIDs) {
+        auto groupPos = schema->getGroupPos(*joinID);
+        if (!schema->getGroup(groupPos)->isFlat()) {
+            unFlatGroupsPos.insert(groupPos);
+        }
+    }
+    auto cardinality = buildPlan.getCardinality();
+    for (auto groupPos : unFlatGroupsPos) {
+        cardinality *= schema->getGroup(groupPos)->getMultiplier();
+    }
+    return cardinality;
 }
 
 } // namespace planner

@@ -15,8 +15,10 @@ std::unique_ptr<PhysicalPlan> PlanMapper::mapLogicalPlanToPhysical(LogicalPlan* 
     const binder::expression_vector& expressionsToCollect, common::StatementType statementType) {
     auto lastOperator = mapLogicalOperatorToPhysical(logicalPlan->getLastOperator());
     if (!StatementTypeUtils::isCopyCSV(statementType)) {
-        lastOperator = appendResultCollector(
+         auto resultCollector = appendResultCollector(
             expressionsToCollect, *logicalPlan->getSchema(), std::move(lastOperator));
+        resultCollector->trackMultiplicity = true;
+        lastOperator = std::move(resultCollector);
     }
     return make_unique<PhysicalPlan>(std::move(lastOperator));
 }

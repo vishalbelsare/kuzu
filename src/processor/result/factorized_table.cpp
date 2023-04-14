@@ -20,9 +20,18 @@ FactorizedTableSchema::FactorizedTableSchema(const FactorizedTableSchema& other)
     for (auto& column : other.columns) {
         appendColumn(std::make_unique<ColumnSchema>(*column));
     }
+    hasMultiplicityColumn_ = other.hasMultiplicityColumn_;
+}
+
+void FactorizedTableSchema::appendMultiplicityColumn() {
+    auto columnSchema = std::make_unique<ColumnSchema>(
+        false /* isUnFlat */, UINT32_MAX, Types::getDataTypeSize(common::INT64));
+    appendColumn(std::move(columnSchema));
+    hasMultiplicityColumn_ = true;
 }
 
 void FactorizedTableSchema::appendColumn(std::unique_ptr<ColumnSchema> column) {
+    assert(!hasMultiplicityColumn_); // multiplicity column must appear at the end
     numBytesForDataPerTuple += column->getNumBytes();
     columns.push_back(std::move(column));
     colOffsets.push_back(
@@ -217,13 +226,16 @@ uint64_t FactorizedTable::getNumFlatTuples(ft_tuple_idx_t tupleIdx) const {
     std::unordered_map<uint32_t, bool> calculatedDataChunkPoses;
     uint64_t numFlatTuples = 1;
     auto tupleBuffer = getTuple(tupleIdx);
-    for (auto i = 0u; i < tableSchema->getNumColumns(); i++) {
+    for (auto i = 0u; i < tableSchema->getNumColumnsIgnoringMultiplicityColumn(); i++) {
         auto column = tableSchema->getColumn(i);
         if (!calculatedDataChunkPoses.contains(column->getDataChunkPos())) {
             calculatedDataChunkPoses[column->getDataChunkPos()] = true;
             numFlatTuples *= column->isFlat() ? 1 : ((overflow_value_t*)tupleBuffer)->numElements;
         }
         tupleBuffer += column->getNumBytes();
+    }
+    if (tableSchema->hasMultiplicityColumn()) {
+        numFlatTuples *= *(int64_t*)tupleBuffer;
     }
     return numFlatTuples;
 }
@@ -677,19 +689,20 @@ FlatTupleIterator::FlatTupleIterator(FactorizedTable& factorizedTable, std::vect
     : factorizedTable{factorizedTable}, numFlatTuples{0}, nextFlatTupleIdx{0},
       nextTupleIdx{1}, values{std::move(values)} {
     resetState();
-    assert(this->values.size() == factorizedTable.tableSchema->getNumColumns());
+    assert(this->values.size() <= factorizedTable.tableSchema->getNumColumns());
 }
 
 void FlatTupleIterator::getNextFlatTuple() {
+    if (numRepeat < currentTupleMultiplicity) {
+        nextFlatTupleIdx++;
+        numRepeat++;
+        return;
+    }
     // Go to the next tuple if we have iterated all the flat tuples of the current tuple.
     if (nextFlatTupleIdx >= numFlatTuples) {
-        currentTupleBuffer = factorizedTable.getTuple(nextTupleIdx);
-        numFlatTuples = factorizedTable.getNumFlatTuples(nextTupleIdx);
-        nextFlatTupleIdx = 0;
-        updateNumElementsInDataChunk();
-        nextTupleIdx++;
+        initForNextTuple();
     }
-    for (auto i = 0ul; i < factorizedTable.getTableSchema()->getNumColumns(); i++) {
+    for (auto i = 0ul; i < factorizedTable.getTableSchema()->getNumColumnsIgnoringMultiplicityColumn(); i++) {
         auto column = factorizedTable.getTableSchema()->getColumn(i);
         if (column->isFlat()) {
             readFlatColToFlatTuple(i, currentTupleBuffer);
@@ -698,6 +711,7 @@ void FlatTupleIterator::getNextFlatTuple() {
         }
     }
     updateFlatTuplePositionsInDataChunk();
+    numRepeat = 1;
     nextFlatTupleIdx++;
 }
 
@@ -705,12 +719,28 @@ void FlatTupleIterator::resetState() {
     numFlatTuples = 0;
     nextFlatTupleIdx = 0;
     nextTupleIdx = 1;
+    currentTupleMultiplicity = 1;
+    numRepeat = 1;
     if (factorizedTable.getNumTuples()) {
         currentTupleBuffer = factorizedTable.getTuple(0);
         numFlatTuples = factorizedTable.getNumFlatTuples(0);
         updateNumElementsInDataChunk();
         updateInvalidEntriesInFlatTuplePositionsInDataChunk();
     }
+}
+
+void FlatTupleIterator::initForNextTuple() {
+    currentTupleBuffer = factorizedTable.getTuple(nextTupleIdx);
+    currentTupleMultiplicity =
+        factorizedTable.tableSchema->hasMultiplicityColumn() ?
+            *(int64_t*)(
+                currentTupleBuffer + factorizedTable.tableSchema->getMultiplicityColumnOffset()) :
+            1;
+    numFlatTuples = factorizedTable.getNumFlatTuples(nextTupleIdx);
+    nextFlatTupleIdx = 0;
+    numRepeat = 1;
+    updateNumElementsInDataChunk();
+    nextTupleIdx++;
 }
 
 void FlatTupleIterator::readUnflatColToFlatTuple(ft_col_idx_t colIdx, uint8_t* valueBuffer) {
@@ -758,7 +788,7 @@ void FlatTupleIterator::updateInvalidEntriesInFlatTuplePositionsInDataChunk() {
 
 void FlatTupleIterator::updateNumElementsInDataChunk() {
     auto colOffsetInTupleBuffer = 0ul;
-    for (auto i = 0u; i < factorizedTable.getTableSchema()->getNumColumns(); i++) {
+    for (auto i = 0u; i < factorizedTable.getTableSchema()->getNumColumnsIgnoringMultiplicityColumn(); i++) {
         auto column = factorizedTable.getTableSchema()->getColumn(i);
         // If this is an unflat column, the number of elements is stored in the
         // overflow_value_t struct. Otherwise, the number of elements is 1.

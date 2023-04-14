@@ -114,7 +114,8 @@ void QueryResult::initResultTableAndIterator(
     factorizedTable = std::move(factorizedTable_);
     tuple = std::make_shared<FlatTuple>();
     std::vector<Value*> valuesToCollect;
-    for (auto i = 0u; i < columns.size(); ++i) {
+    auto numColumns = factorizedTable->getTableSchema()->getNumColumnsIgnoringMultiplicityColumn();
+    for (auto i = 0u; i < numColumns; ++i) {
         auto column = columns[i].get();
         auto columnType = column->getDataType();
         auto columnName = column->hasAlias() ? column->getAlias() : column->toString();

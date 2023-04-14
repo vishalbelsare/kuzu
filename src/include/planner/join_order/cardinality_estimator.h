@@ -25,6 +25,8 @@ public:
 
     double getExtensionRate(
         const binder::RelExpression& rel, const binder::NodeExpression& boundNode);
+    static uint64_t getJoinKeysFlatCardinality(
+        const binder::expression_vector& joinNodeIDs, const LogicalPlan& buildPlan);
 
 private:
     inline uint64_t atLeastOne(uint64_t x) { return x == 0 ? 1 : x; }

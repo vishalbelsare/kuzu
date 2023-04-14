@@ -129,20 +129,31 @@ public:
 
     FactorizedTableSchema(const FactorizedTableSchema& other);
 
+    // TODO: maybe we should remove this
     explicit FactorizedTableSchema(std::vector<std::unique_ptr<ColumnSchema>> columns)
         : columns{std::move(columns)} {}
 
+    void appendMultiplicityColumn();
     void appendColumn(std::unique_ptr<ColumnSchema> column);
 
+    inline bool hasMultiplicityColumn() const { return hasMultiplicityColumn_; }
     inline ColumnSchema* getColumn(ft_col_idx_t idx) const { return columns[idx].get(); }
 
-    inline uint32_t getNumColumns() const { return columns.size(); }
+    inline size_t getNumColumns() const { return columns.size(); }
+    inline size_t getNumColumnsIgnoringMultiplicityColumn() const {
+        return hasMultiplicityColumn_ ? columns.size() - 1 : columns.size();
+    }
 
     inline ft_col_offset_t getNullMapOffset() const { return numBytesForDataPerTuple; }
 
     inline uint32_t getNumBytesPerTuple() const { return numBytesPerTuple; }
 
     inline ft_col_offset_t getColOffset(ft_col_idx_t idx) const { return colOffsets[idx]; }
+
+    inline ft_col_offset_t getMultiplicityColumnOffset() const {
+        assert(hasMultiplicityColumn_);
+        return getColOffset(columns.size() - 1);
+    }
 
     inline void setMayContainsNullsToTrue(ft_col_idx_t idx) {
         assert(idx < columns.size());
@@ -164,6 +175,7 @@ private:
     uint32_t numBytesForNullMapPerTuple = 0;
     uint32_t numBytesPerTuple = 0;
     std::vector<ft_col_offset_t> colOffsets;
+    bool hasMultiplicityColumn_;
 };
 
 class FlatTupleIterator;
@@ -335,7 +347,8 @@ public:
         FactorizedTable& factorizedTable, std::vector<common::Value*> values);
 
     inline bool hasNextFlatTuple() {
-        return nextTupleIdx < factorizedTable.getNumTuples() || nextFlatTupleIdx < numFlatTuples;
+        return numRepeat < currentTupleMultiplicity ||
+               nextTupleIdx < factorizedTable.getNumTuples() || nextFlatTupleIdx < numFlatTuples;
     }
 
     void getNextFlatTuple();
@@ -343,6 +356,8 @@ public:
     void resetState();
 
 private:
+    void initForNextTuple();
+
     // The dataChunkPos may be not consecutive, which means some entries in the
     // flatTuplePositionsInDataChunk is invalid. We put pair(UINT64_MAX, UINT64_MAX) in the
     // invalid entries.
@@ -377,9 +392,11 @@ private:
 
     FactorizedTable& factorizedTable;
     uint8_t* currentTupleBuffer;
+    uint64_t currentTupleMultiplicity;
     uint64_t numFlatTuples;
     ft_tuple_idx_t nextFlatTupleIdx;
     ft_tuple_idx_t nextTupleIdx;
+    uint64_t numRepeat;
     // This field stores the (nextIdxToReadInDataChunk, numElementsInDataChunk) of each dataChunk.
     std::vector<std::pair<uint64_t, uint64_t>> flatTuplePositionsInDataChunk;
 

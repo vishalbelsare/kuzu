@@ -57,8 +57,10 @@ public:
     void executeInternal(ExecutionContext* context) override;
 
     std::unique_ptr<PhysicalOperator> clone() override {
-        return make_unique<ResultCollector>(resultSetDescriptor->copy(), payloadsPosAndType,
+        auto s = make_unique<ResultCollector>(resultSetDescriptor->copy(), payloadsPosAndType,
             isPayloadFlat, sharedState, children[0]->clone(), id, paramsString);
+        s->trackMultiplicity = trackMultiplicity;
+        return s;
     }
 
     inline std::shared_ptr<FTableSharedState> getSharedState() { return sharedState; }
@@ -71,12 +73,13 @@ private:
 
     std::unique_ptr<FactorizedTableSchema> populateTableSchema();
 
-private:
+public:
     std::vector<std::pair<DataPos, common::DataType>> payloadsPosAndType;
     std::vector<bool> isPayloadFlat;
     std::vector<common::ValueVector*> vectorsToCollect;
     std::shared_ptr<FTableSharedState> sharedState;
     std::unique_ptr<FactorizedTable> localTable;
+    bool trackMultiplicity;
 };
 
 } // namespace processor

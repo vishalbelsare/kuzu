@@ -1,6 +1,7 @@
 #include "planner/join_order/cost_model.h"
 
 #include "common/constants.h"
+#include "planner/join_order/cardinality_estimator.h"
 
 namespace kuzu {
 namespace planner {
@@ -15,7 +16,8 @@ uint64_t CostModel::computeHashJoinCost(const binder::expression_vector& joinNod
     cost += probe.getCost();
     cost += build.getCost();
     cost += probe.getCardinality();
-    cost += common::PlannerKnobs::BUILD_PENALTY * build.getCardinality();
+    cost += common::PlannerKnobs::BUILD_PENALTY *
+            CardinalityEstimator::getJoinKeysFlatCardinality(joinNodeIDs, build);
     return cost;
 }
 

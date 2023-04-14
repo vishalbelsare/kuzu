@@ -34,8 +34,11 @@ void ResultCollector::initLocalStateInternal(ResultSet* resultSet, ExecutionCont
 void ResultCollector::executeInternal(ExecutionContext* context) {
     while (children[0]->getNextTuple(context)) {
         if (!vectorsToCollect.empty()) {
-            for (auto i = 0u; i < resultSet->multiplicity; i++) {
-                localTable->append(vectorsToCollect);
+            localTable->append(vectorsToCollect);
+            if (trackMultiplicity) {
+                auto tuple = localTable->getTuple(localTable->getNumTuples()-1);
+                ((int64_t*)(tuple + localTable->getTableSchema()->getMultiplicityColumnOffset()))[0] =
+                    (int64_t)resultSet->multiplicity;
             }
         }
     }
@@ -56,6 +59,9 @@ std::unique_ptr<FactorizedTableSchema> ResultCollector::populateTableSchema() {
             std::make_unique<ColumnSchema>(!isPayloadFlat[i], dataPos.dataChunkPos,
                 isPayloadFlat[i] ? Types::getDataTypeSize(dataType) :
                                    (uint32_t)sizeof(overflow_value_t)));
+    }
+    if (trackMultiplicity) {
+        tableSchema->appendMultiplicityColumn();
     }
     return tableSchema;
 }
