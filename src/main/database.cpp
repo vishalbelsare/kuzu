@@ -65,10 +65,10 @@ void Database::initDBDirAndCoreFilesIfNecessary() const {
             StorageUtils::getRelsStatisticsFilePath(databasePath, DBFileType::ORIGINAL))) {
         RelsStatistics::saveInitialRelsStatisticsToFile(databasePath);
     }
-    if (!FileUtils::fileOrPathExists(
-            StorageUtils::getCatalogFilePath(databasePath, DBFileType::ORIGINAL))) {
-        Catalog::saveInitialCatalogToFile(databasePath);
-    }
+//    if (!FileUtils::fileOrPathExists(
+//            StorageUtils::getCatalogFilePath(databasePath, DBFileType::ORIGINAL))) {
+//        Catalog::saveInitialCatalogToFile(databasePath);
+//    }
 }
 
 void Database::initLoggers() {

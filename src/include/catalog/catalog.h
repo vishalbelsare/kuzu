@@ -23,9 +23,6 @@ namespace catalog {
 
 class CatalogContent {
 public:
-    // This constructor is only used for mock catalog testing only.
-    CatalogContent();
-
     explicit CatalogContent(const std::string& directory);
 
     CatalogContent(const CatalogContent& other);
@@ -82,8 +79,8 @@ public:
         return nodeTableNameToIDMap.contains(tableName) ? nodeTableNameToIDMap.at(tableName) :
                                                           relTableNameToIDMap.at(tableName);
     }
-    inline bool isSingleMultiplicityInDirection(
-        common::table_id_t tableID, common::RelDirection direction) const {
+    inline bool isSingleMultiplicityInDirection(common::table_id_t tableID,
+        common::RelDirection direction) const {
         return relTableSchemas.at(tableID)->isSingleMultiplicityInDirection(direction);
     }
 
@@ -92,10 +89,10 @@ public:
      */
     // getNodeProperty and getRelProperty should be called after checking if property exists
     // (containNodeProperty and containRelProperty).
-    const Property& getNodeProperty(
-        common::table_id_t tableID, const std::string& propertyName) const;
-    const Property& getRelProperty(
-        common::table_id_t tableID, const std::string& propertyName) const;
+    const Property& getNodeProperty(common::table_id_t tableID,
+        const std::string& propertyName) const;
+    const Property& getRelProperty(common::table_id_t tableID,
+        const std::string& propertyName) const;
 
     std::vector<Property> getAllNodeProperties(common::table_id_t tableID) const;
     inline const std::vector<Property>& getRelProperties(common::table_id_t tableID) const {
@@ -128,8 +125,8 @@ public:
 
     void renameTable(common::table_id_t tableID, std::string newName);
 
-    void saveToFile(const std::string& directory, common::DBFileType dbFileType);
-    void readFromFile(const std::string& directory, common::DBFileType dbFileType);
+    void saveToFile(const std::string& path);
+    void readFromFile(const std::string& path);
 
 private:
     inline common::table_id_t assignNextTableID() { return nextTableID++; }
@@ -153,7 +150,7 @@ private:
 
 class Catalog {
 public:
-    Catalog();
+    //    Catalog();
 
     explicit Catalog(storage::WAL* wal);
 
@@ -182,13 +179,14 @@ public:
     }
 
     inline void writeCatalogForWALRecord(const std::string& directory) {
-        catalogContentForWriteTrx->saveToFile(directory, common::DBFileType::WAL_VERSION);
+        auto catalogPath =
+            storage::StorageUtils::getCatalogFilePath(directory, common::DBFileType::WAL_VERSION);
+        catalogContentForWriteTrx->saveToFile(catalogPath);
     }
 
-    static inline void saveInitialCatalogToFile(const std::string& directory) {
-        std::make_unique<Catalog>()->getReadOnlyVersion()->saveToFile(
-            directory, common::DBFileType::ORIGINAL);
-    }
+    //    static inline void saveInitialCatalogToFile(const std::string& directory) {
+    //        std::make_unique<Catalog>()->getReadOnlyVersion()->saveToFile(directory);
+    //    }
 
     common::ExpressionType getFunctionType(const std::string& name) const;
 
@@ -203,13 +201,13 @@ public:
 
     void renameTable(common::table_id_t tableID, std::string newName);
 
-    void addProperty(
-        common::table_id_t tableID, std::string propertyName, common::DataType dataType);
+    void addProperty(common::table_id_t tableID, std::string propertyName,
+        common::DataType dataType);
 
     void dropProperty(common::table_id_t tableID, common::property_id_t propertyID);
 
-    void renameProperty(
-        common::table_id_t tableID, common::property_id_t propertyID, const std::string& newName);
+    void renameProperty(common::table_id_t tableID, common::property_id_t propertyID,
+        const std::string& newName);
 
     std::unordered_set<RelTableSchema*> getAllRelTableSchemasContainBoundTable(
         common::table_id_t boundTableID) const;
