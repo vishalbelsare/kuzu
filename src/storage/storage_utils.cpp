@@ -27,7 +27,8 @@ std::string StorageUtils::getNodePropertyColumnFName(const std::string& director
         dbFileType);
 }
 
-std::string StorageUtils::appendStructFieldName(std::string filePath, std::string structFieldName) {
+std::string StorageUtils::appendStructFieldName(
+    std::string filePath, const std::string& structFieldName) {
     // Naming rules for a struct field column is: n-[tableID]-[propertyID]-[fieldName].col.
     auto posToInsertFieldName = filePath.find('.');
     filePath.insert(posToInsertFieldName - 1, "-" + structFieldName);
@@ -235,7 +236,7 @@ void StorageUtils::createFileForRelListsPropertyWithDefaultVal(table_id_t relTab
 }
 
 std::string StorageUtils::appendSuffixOrInsertBeforeWALSuffix(
-    std::string fileName, std::string suffix) {
+    const std::string& fileName, const std::string& suffix) {
     auto pos = fileName.find(StorageConstants::WAL_FILE_SUFFIX);
     if (pos == std::string::npos) {
         return fileName + suffix;

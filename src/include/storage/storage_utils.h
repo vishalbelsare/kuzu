@@ -82,7 +82,8 @@ public:
     static std::string getNodePropertyColumnFName(const std::string& directory,
         const common::table_id_t& tableID, uint32_t propertyID, common::DBFileType dbFileType);
 
-    static std::string appendStructFieldName(std::string filePath, std::string structFieldName);
+    static std::string appendStructFieldName(
+        std::string filePath, const std::string& structFieldName);
 
     static inline StorageStructureIDAndFName getNodePropertyColumnStructureIDAndFName(
         const std::string& directory, const catalog::Property& property) {
@@ -277,7 +278,7 @@ public:
 
 private:
     static std::string appendSuffixOrInsertBeforeWALSuffix(
-        std::string fileName, std::string suffix);
+        const std::string& fileName, const std::string& suffix);
 
     static void createFileForRelColumnPropertyWithDefaultVal(common::table_id_t relTableID,
         common::table_id_t boundTableID, common::RelDirection direction,

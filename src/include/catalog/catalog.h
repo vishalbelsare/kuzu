@@ -27,8 +27,6 @@ public:
 
     CatalogContent(const CatalogContent& other);
 
-    virtual ~CatalogContent() = default;
-
     /**
      * Node and Rel table functions.
      */
@@ -79,8 +77,8 @@ public:
         return nodeTableNameToIDMap.contains(tableName) ? nodeTableNameToIDMap.at(tableName) :
                                                           relTableNameToIDMap.at(tableName);
     }
-    inline bool isSingleMultiplicityInDirection(common::table_id_t tableID,
-        common::RelDirection direction) const {
+    inline bool isSingleMultiplicityInDirection(
+        common::table_id_t tableID, common::RelDirection direction) const {
         return relTableSchemas.at(tableID)->isSingleMultiplicityInDirection(direction);
     }
 
@@ -89,10 +87,10 @@ public:
      */
     // getNodeProperty and getRelProperty should be called after checking if property exists
     // (containNodeProperty and containRelProperty).
-    const Property& getNodeProperty(common::table_id_t tableID,
-        const std::string& propertyName) const;
-    const Property& getRelProperty(common::table_id_t tableID,
-        const std::string& propertyName) const;
+    const Property& getNodeProperty(
+        common::table_id_t tableID, const std::string& propertyName) const;
+    const Property& getRelProperty(
+        common::table_id_t tableID, const std::string& propertyName) const;
 
     std::vector<Property> getAllNodeProperties(common::table_id_t tableID) const;
     inline const std::vector<Property>& getRelProperties(common::table_id_t tableID) const {
@@ -150,11 +148,7 @@ private:
 
 class Catalog {
 public:
-    //    Catalog();
-
     explicit Catalog(storage::WAL* wal);
-
-    virtual ~Catalog() = default;
 
     // TODO(Guodong): Get rid of these two functions.
     inline CatalogContent* getReadOnlyVersion() const { return catalogContentForReadOnlyTrx.get(); }
@@ -184,10 +178,6 @@ public:
         catalogContentForWriteTrx->saveToFile(catalogPath);
     }
 
-    //    static inline void saveInitialCatalogToFile(const std::string& directory) {
-    //        std::make_unique<Catalog>()->getReadOnlyVersion()->saveToFile(directory);
-    //    }
-
     common::ExpressionType getFunctionType(const std::string& name) const;
 
     common::table_id_t addNodeTableSchema(std::string tableName, common::property_id_t primaryKeyId,
@@ -201,13 +191,13 @@ public:
 
     void renameTable(common::table_id_t tableID, std::string newName);
 
-    void addProperty(common::table_id_t tableID, std::string propertyName,
-        common::DataType dataType);
+    void addProperty(
+        common::table_id_t tableID, std::string propertyName, common::DataType dataType);
 
     void dropProperty(common::table_id_t tableID, common::property_id_t propertyID);
 
-    void renameProperty(common::table_id_t tableID, common::property_id_t propertyID,
-        const std::string& newName);
+    void renameProperty(
+        common::table_id_t tableID, common::property_id_t propertyID, const std::string& newName);
 
     std::unordered_set<RelTableSchema*> getAllRelTableSchemasContainBoundTable(
         common::table_id_t boundTableID) const;
