@@ -101,7 +101,7 @@ struct ShortestPathBFSMorsel : public BaseBFSMorsel {
     uint8_t* visitedNodes;
     // Results
     std::vector<common::offset_t> dstNodeOffsets;
-    std::unordered_map<common::offset_t, uint64_t> dstNodeOffset2PathLength;
+    std::vector<uint64_t> dstNodeOffset2PathLength;
 
     ShortestPathBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound, uint8_t upperBound,
         NodeOffsetSemiMask* semiMask)
@@ -110,6 +110,7 @@ struct ShortestPathBFSMorsel : public BaseBFSMorsel {
         nextFrontier = std::make_unique<Frontier>();
         visitedNodesBuffer = std::make_unique<uint8_t[]>(maxOffset + 1 * sizeof(uint8_t));
         visitedNodes = visitedNodesBuffer.get();
+        dstNodeOffset2PathLength = std::vector<uint64_t>(maxOffset + 1, 0u);
     }
 
     inline bool isComplete() override {

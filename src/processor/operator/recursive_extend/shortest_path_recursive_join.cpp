@@ -22,10 +22,12 @@ bool ShortestPathRecursiveJoin::scanOutput() {
     while (vectorSize != common::DEFAULT_VECTOR_CAPACITY &&
            outputCursor < morsel->dstNodeOffsets.size()) {
         auto offset = morsel->dstNodeOffsets[outputCursor];
-        dstNodeIDVector->setValue<common::nodeID_t>(
-            vectorSize, common::nodeID_t{offset, nodeTable->getTableID()});
-        distanceVector->setValue<int64_t>(vectorSize, morsel->dstNodeOffset2PathLength.at(offset));
-        vectorSize++;
+        if (morsel->dstNodeOffset2PathLength[offset] >= lowerBound) {
+            dstNodeIDVector->setValue<common::nodeID_t>(
+                vectorSize, common::nodeID_t{offset, nodeTable->getTableID()});
+            distanceVector->setValue<int64_t>(vectorSize, morsel->dstNodeOffset2PathLength[offset]);
+            vectorSize++;
+        }
         outputCursor++;
     }
     dstNodeIDVector->state->initOriginalAndSelectedSize(vectorSize);
