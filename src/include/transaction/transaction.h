@@ -14,7 +14,7 @@ class Transaction {
     friend class TransactionManager;
 
 public:
-    Transaction(TransactionType transactionType, uint64_t transactionID)
+    constexpr Transaction(TransactionType transactionType, uint64_t transactionID)
         : type{transactionType}, ID{transactionID} {}
 
 public:
@@ -25,14 +25,13 @@ public:
     static inline std::unique_ptr<Transaction> getDummyWriteTrx() {
         return std::make_unique<Transaction>(TransactionType::WRITE, UINT64_MAX);
     }
-    static inline std::unique_ptr<Transaction> getDummyReadOnlyTrx() {
-        return std::make_unique<Transaction>(TransactionType::READ_ONLY, UINT64_MAX);
-    }
 
 private:
     TransactionType type;
     uint64_t ID;
 };
+
+static constexpr Transaction DUMMY_READ_ONLY_TRX(TransactionType::READ_ONLY, UINT64_MAX);
 
 } // namespace transaction
 } // namespace kuzu

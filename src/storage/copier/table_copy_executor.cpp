@@ -7,18 +7,19 @@
 
 using namespace kuzu::catalog;
 using namespace kuzu::common;
+using namespace kuzu::transaction;
 
 namespace kuzu {
 namespace storage {
 
-TableCopyExecutor::TableCopyExecutor(CopyDescription& copyDescription, std::string outputDirectory,
-    TaskScheduler& taskScheduler, Catalog& catalog, common::table_id_t tableID,
-    TablesStatistics* tablesStatistics)
-    : logger{LoggerUtils::getLogger(LoggerConstants::LoggerEnum::LOADER)},
+TableCopyExecutor::TableCopyExecutor(Transaction* transaction, CopyDescription& copyDescription,
+    std::string outputDirectory, TaskScheduler& taskScheduler, Catalog& catalog,
+    common::table_id_t tableID, TablesStatistics* tablesStatistics)
+    : logger{LoggerUtils::getLogger(LoggerConstants::LoggerEnum::LOADER)}, transaction{transaction},
       copyDescription{copyDescription}, outputDirectory{std::move(outputDirectory)},
       taskScheduler{taskScheduler}, catalog{catalog}, numRows{0},
-      tableSchema{catalog.getReadOnlyVersion()->getTableSchema(tableID)}, tablesStatistics{
-                                                                              tablesStatistics} {}
+      tableSchema{catalog.getReadOnlyVersion()->getTableSchema(tableID)},
+      tablesStatistics{tablesStatistics} {}
 
 uint64_t TableCopyExecutor::copy(processor::ExecutionContext* executionContext) {
     logger->info(StringUtils::string_format("Copying {} file to table {}.",
@@ -73,8 +74,8 @@ void TableCopyExecutor::countNumLinesCSV(const std::vector<std::string>& filePat
             numLinesPerBlock.push_back(currNumRows);
             numRows += currNumRows;
         }
-        fileBlockInfos.emplace(
-            filePath, FileBlockInfo{startNodeOffset, numBlocks, numLinesPerBlock});
+        fileBlockInfos.emplace(filePath,
+            FileBlockInfo{startNodeOffset, numBlocks, numLinesPerBlock});
     }
 }
 
@@ -89,8 +90,8 @@ void TableCopyExecutor::countNumLinesParquet(const std::vector<std::string>& fil
         for (auto blockIdx = 0; blockIdx < numBlocks; ++blockIdx) {
             numLinesPerBlock[blockIdx] = metadata->RowGroup(blockIdx)->num_rows();
         }
-        fileBlockInfos.emplace(
-            filePath, FileBlockInfo{startNodeOffset, numBlocks, numLinesPerBlock});
+        fileBlockInfos.emplace(filePath,
+            FileBlockInfo{startNodeOffset, numBlocks, numLinesPerBlock});
         numRows += metadata->num_rows();
     }
 }
@@ -114,8 +115,8 @@ void TableCopyExecutor::countNumLinesNpy(const std::vector<std::string>& filePat
                 numNodesInFile - blockIdx * CopyConstants::NUM_ROWS_PER_BLOCK_FOR_NPY);
             numLinesPerBlock[blockIdx] = numLines;
         }
-        fileBlockInfos.emplace(
-            filePath, FileBlockInfo{0 /* start node offset */, numBlocks, numLinesPerBlock});
+        fileBlockInfos.emplace(filePath,
+            FileBlockInfo{0 /* start node offset */, numBlocks, numLinesPerBlock});
     }
 }
 
@@ -186,8 +187,8 @@ std::unique_ptr<parquet::arrow::FileReader> TableCopyExecutor::createParquetRead
     return reader;
 }
 
-std::vector<std::pair<int64_t, int64_t>> TableCopyExecutor::getListElementPos(
-    const std::string& l, int64_t from, int64_t to, const CopyDescription& copyDescription) {
+std::vector<std::pair<int64_t, int64_t>> TableCopyExecutor::getListElementPos(const std::string& l,
+    int64_t from, int64_t to, const CopyDescription& copyDescription) {
     std::vector<std::pair<int64_t, int64_t>> split;
     int bracket = 0;
     int64_t last = from;
@@ -330,8 +331,8 @@ std::shared_ptr<arrow::DataType> TableCopyExecutor::toArrowDataType(
     }
 }
 
-std::unique_ptr<Value> TableCopyExecutor::convertStringToValue(
-    std::string element, const LogicalType& type, const CopyDescription& copyDescription) {
+std::unique_ptr<Value> TableCopyExecutor::convertStringToValue(std::string element,
+    const LogicalType& type, const CopyDescription& copyDescription) {
     std::unique_ptr<Value> value;
     switch (type.getLogicalTypeID()) {
     case LogicalTypeID::INT64: {

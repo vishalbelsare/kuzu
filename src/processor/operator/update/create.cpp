@@ -22,7 +22,7 @@ bool CreateNode::getNextTuplesInternal(ExecutionContext* context) {
         auto nodeTable = createNodeInfo->table;
         createNodeInfo->primaryKeyEvaluator->evaluate();
         auto primaryKeyVector = createNodeInfo->primaryKeyEvaluator->resultVector.get();
-        auto nodeOffset = nodeTable->addNodeAndResetProperties(primaryKeyVector);
+        auto nodeOffset = nodeTable->addNodeAndResetProperties(context->transaction, primaryKeyVector);
         auto vector = outValueVectors[i];
         nodeID_t nodeID{nodeOffset, nodeTable->getTableID()};
         vector->setValue(vector->state->selVector->selectedPositions[0], nodeID);

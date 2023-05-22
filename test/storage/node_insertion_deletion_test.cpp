@@ -42,8 +42,9 @@ public:
         // structures either write values or NULLs or empty Lists etc. Within the scope of these
         // tests we only have an ID column and we are manually from outside
         // NodesStatisticsAndDeletedIDs adding a NULL value for the ID. This should change later.
-        offset_t nodeOffset = personNodeTable->getNodeStatisticsAndDeletedIDs()->addNode(
-            personNodeTable->getTableID());
+        offset_t nodeOffset =
+            getStorageManager(*database)->getNodesStore().getNodesStatisticsAndDeletedIDs().addNode(
+                personNodeTable->getTableID());
         auto dataChunk = std::make_shared<DataChunk>(2);
         // Flatten the data chunk
         dataChunk->state->currIdx = 0;
@@ -55,7 +56,7 @@ public:
         dataChunk->insert(1, idVector);
         ((nodeID_t*)nodeIDVector->getData())[0].offset = nodeOffset;
         idVector->setNull(0, true /* is null */);
-        idColumn->write(nodeIDVector.get(), idVector.get());
+        idColumn->write(getActiveTransaction(*conn), nodeIDVector.get(), idVector.get());
         return nodeOffset;
     }
 
@@ -66,20 +67,22 @@ public:
 };
 
 TEST_F(NodeInsertionDeletionTests, DeletingSameNodeOffsetErrorsTest) {
-    personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(
-        personNodeTable->getTableID(), 3 /* person w/ offset/ID 3 */);
+    personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(personNodeTable->getTableID(),
+        3 /* person w/ offset/ID 3 */);
     try {
         personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(personNodeTable->getTableID(),
             3 /* person w/ offset/ID 3 again, which should error  */);
         FAIL();
     } catch (RuntimeException& e) {
-    } catch (Exception& e) { FAIL(); }
+    } catch (Exception& e) {
+        FAIL();
+    }
 }
 
 TEST_F(NodeInsertionDeletionTests, DeleteAddMixedTest) {
     for (offset_t nodeOffset = 1000; nodeOffset < 9000; ++nodeOffset) {
-        personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(
-            personNodeTable->getTableID(), nodeOffset);
+        personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(personNodeTable->getTableID(),
+            nodeOffset);
     }
     for (int i = 0; i < 8000; ++i) {
         auto nodeOffset = addNode();
@@ -101,8 +104,8 @@ TEST_F(NodeInsertionDeletionTests, DeleteAddMixedTest) {
     ASSERT_EQ(readConn->query(query)->getNext()->getValue(0)->getValue<int64_t>(), 10010);
 
     for (offset_t nodeOffset = 0; nodeOffset < 10010; ++nodeOffset) {
-        personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(
-            personNodeTable->getTableID(), nodeOffset);
+        personNodeTable->getNodeStatisticsAndDeletedIDs()->deleteNode(personNodeTable->getTableID(),
+            nodeOffset);
     }
 
     ASSERT_EQ(conn->query(query)->getNext()->getValue(0)->getValue<int64_t>(), 0);

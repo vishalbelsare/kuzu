@@ -9,7 +9,7 @@ namespace processor {
 
 uint64_t CopyNode::executeInternal(
     common::TaskScheduler* taskScheduler, ExecutionContext* executionContext) {
-    auto nodeCopier = std::make_unique<NodeCopyExecutor>(
+    auto nodeCopier = std::make_unique<NodeCopyExecutor>(executionContext->transaction,
         copyDescription, wal->getDirectory(), *taskScheduler, *catalog, table, nodesStatistics);
     auto numNodesCopied = nodeCopier->copy(executionContext);
     for (auto& relTableSchema : catalog->getAllRelTableSchemasContainBoundTable(tableID)) {

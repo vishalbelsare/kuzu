@@ -117,8 +117,8 @@ public:
     }
 
     inline common::offset_t getMaxNodeOffset(
-        transaction::Transaction* transaction, common::table_id_t tableID) {
-        return getMaxNodeOffset(transaction == nullptr || transaction->isReadOnly() ?
+        transaction::Transaction* txn, common::table_id_t tableID) {
+        return getMaxNodeOffset(txn == nullptr || txn->isReadOnly() ?
                                     transaction::TransactionType::READ_ONLY :
                                     transaction::TransactionType::WRITE,
             tableID);

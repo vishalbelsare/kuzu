@@ -8,7 +8,7 @@
 namespace kuzu {
 namespace storage {
 
-using read_data_func_t = std::function<void(transaction::Transaction* transaction, uint8_t* frame,
+using read_data_func_t = std::function<void(transaction::Transaction* txn, uint8_t* frame,
     PageElementCursor& pageCursor, common::ValueVector* resultVector, uint32_t posInVector,
     uint32_t numValuesToRead, DiskOverflowFile* diskOverflowFile)>;
 using write_data_func_t = std::function<void(uint8_t* frame, uint16_t posInFrame,
@@ -33,12 +33,13 @@ public:
     // Expose for feature store
     virtual void batchLookup(const common::offset_t* nodeOffsets, size_t size, uint8_t* result);
 
-    virtual void read(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    virtual void read(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector);
 
-    void write(common::ValueVector* nodeIDVector, common::ValueVector* vectorToWriteFrom);
+    void write(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
+        common::ValueVector* vectorToWriteFrom);
 
-    bool isNull(common::offset_t nodeOffset, transaction::Transaction* transaction);
+    bool isNull(common::offset_t nodeOffset, transaction::Transaction* txn);
     void setNull(common::offset_t nodeOffset);
 
     inline NullColumn* getNullColumn() { return nullColumn.get(); }
@@ -48,21 +49,21 @@ public:
     virtual common::Value readValueForTestingOnly(common::offset_t offset);
 
 protected:
-    void lookup(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    void lookup(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector, uint32_t vectorPos);
 
-    virtual void lookup(transaction::Transaction* transaction, common::offset_t nodeOffset,
+    virtual void lookup(transaction::Transaction* txn, common::offset_t nodeOffset,
         common::ValueVector* resultVector, uint32_t vectorPos);
-    virtual void scan(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    virtual void scan(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector);
-    virtual void write(common::offset_t nodeOffset, common::ValueVector* vectorToWriteFrom,
-        uint32_t posInVectorToWriteFrom);
+    virtual void write(transaction::Transaction* txn, common::offset_t nodeOffset,
+        common::ValueVector* vectorToWriteFrom, uint32_t posInVectorToWriteFrom);
 
-    void readFromPage(transaction::Transaction* transaction, common::page_idx_t pageIdx,
+    void readFromPage(transaction::Transaction* txn, common::page_idx_t pageIdx,
         const std::function<void(uint8_t*)>& func);
 
 private:
-    static void readValuesFromPage(transaction::Transaction* transaction, uint8_t* frame,
+    static void readValuesFromPage(transaction::Transaction* txn, uint8_t* frame,
         PageElementCursor& pageCursor, common::ValueVector* resultVector, uint32_t posInVector,
         uint32_t numValuesToRead, DiskOverflowFile* diskOverflowFile);
     static void writeValueToPage(uint8_t* frame, uint16_t posInFrame, common::ValueVector* vector,
@@ -89,14 +90,14 @@ public:
         readDataFunc = NullColumn::readNullsFromPage;
     }
 
-    void write(common::offset_t nodeOffset, common::ValueVector* vectorToWriteFrom,
-        uint32_t posInVectorToWriteFrom) final;
+    void write(transaction::Transaction* txn, common::offset_t nodeOffset,
+        common::ValueVector* vectorToWriteFrom, uint32_t posInVectorToWriteFrom) final;
 
-    bool readValue(common::offset_t nodeOffset, transaction::Transaction* transaction);
+    bool readValue(common::offset_t nodeOffset, transaction::Transaction* txn);
     void setValue(common::offset_t nodeOffset, bool isNull = true);
 
 private:
-    static void readNullsFromPage(transaction::Transaction* transaction, uint8_t* frame,
+    static void readNullsFromPage(transaction::Transaction* txn, uint8_t* frame,
         PageElementCursor& pageCursor, common::ValueVector* resultVector, uint32_t posInVector,
         uint32_t numValuesToRead, DiskOverflowFile* diskOverflowFile);
 };
@@ -118,8 +119,8 @@ class StringPropertyColumn : public PropertyColumnWithOverflow {
 public:
     StringPropertyColumn(const StorageStructureIDAndFName& structureIDAndFNameOfMainColumn,
         const common::LogicalType& dataType, BufferManager* bufferManager, WAL* wal)
-        : PropertyColumnWithOverflow{
-              structureIDAndFNameOfMainColumn, dataType, bufferManager, wal} {
+        : PropertyColumnWithOverflow{structureIDAndFNameOfMainColumn, dataType, bufferManager,
+              wal} {
         writeDataFunc = StringPropertyColumn::writeStringToPage;
     };
 
@@ -127,20 +128,20 @@ public:
     common::Value readValueForTestingOnly(common::offset_t offset) final;
 
 private:
-    inline void lookup(transaction::Transaction* transaction, common::offset_t nodeOffset,
+    inline void lookup(transaction::Transaction* txn, common::offset_t nodeOffset,
         common::ValueVector* resultVector, uint32_t vectorPos) final {
         resultVector->resetAuxiliaryBuffer();
-        Column::lookup(transaction, nodeOffset, resultVector, vectorPos);
+        Column::lookup(txn, nodeOffset, resultVector, vectorPos);
         if (!resultVector->isNull(vectorPos)) {
-            diskOverflowFile->scanSingleStringOverflow(
-                transaction->getType(), *resultVector, vectorPos);
+            diskOverflowFile->scanSingleStringOverflow(txn->getType(), *resultVector,
+                vectorPos);
         }
     }
-    inline void scan(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    inline void scan(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector) final {
         resultVector->resetAuxiliaryBuffer();
-        Column::scan(transaction, nodeIDVector, resultVector);
-        diskOverflowFile->scanStrings(transaction->getType(), *resultVector);
+        Column::scan(txn, nodeIDVector, resultVector);
+        diskOverflowFile->scanStrings(txn->getType(), *resultVector);
     }
 
     static void writeStringToPage(uint8_t* frame, uint16_t posInFrame, common::ValueVector* vector,
@@ -151,8 +152,8 @@ class ListPropertyColumn : public PropertyColumnWithOverflow {
 public:
     ListPropertyColumn(const StorageStructureIDAndFName& structureIDAndFNameOfMainColumn,
         const common::LogicalType& dataType, BufferManager* bufferManager, WAL* wal)
-        : PropertyColumnWithOverflow{
-              structureIDAndFNameOfMainColumn, dataType, bufferManager, wal} {
+        : PropertyColumnWithOverflow{structureIDAndFNameOfMainColumn, dataType, bufferManager,
+              wal} {
         readDataFunc = ListPropertyColumn::readListsFromPage;
         writeDataFunc = ListPropertyColumn::writeListToPage;
     };
@@ -160,7 +161,7 @@ public:
     common::Value readValueForTestingOnly(common::offset_t offset) final;
 
 private:
-    static void readListsFromPage(transaction::Transaction* transaction, uint8_t* frame,
+    static void readListsFromPage(transaction::Transaction* txn, uint8_t* frame,
         PageElementCursor& pageCursor, common::ValueVector* resultVector, uint32_t posInVector,
         uint32_t numValuesToRead, DiskOverflowFile* diskOverflowFile);
     static void writeListToPage(uint8_t* frame, uint16_t posInFrame, common::ValueVector* vector,
@@ -172,7 +173,7 @@ public:
     StructPropertyColumn(const StorageStructureIDAndFName& structureIDAndFName,
         const common::LogicalType& dataType, BufferManager* bufferManager, WAL* wal);
 
-    void read(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    void read(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector) final;
 
 private:
@@ -190,7 +191,7 @@ public:
     }
 
 private:
-    static void readInternalIDsFromPage(transaction::Transaction* transaction, uint8_t* frame,
+    static void readInternalIDsFromPage(transaction::Transaction* txn, uint8_t* frame,
         PageElementCursor& pageCursor, common::ValueVector* resultVector, uint32_t posInVector,
         uint32_t numValuesToRead, DiskOverflowFile* diskOverflowFile);
     static void writeInternalIDToPage(uint8_t* frame, uint16_t posInFrame,
@@ -201,7 +202,7 @@ class SerialColumn : public Column {
 public:
     SerialColumn() : Column{common::LogicalType{common::LogicalTypeID::SERIAL}} {}
 
-    void read(transaction::Transaction* transaction, common::ValueVector* nodeIDVector,
+    void read(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
         common::ValueVector* resultVector) final;
 };
 
@@ -222,16 +223,16 @@ public:
         case common::LogicalTypeID::FIXED_LIST:
             return std::make_unique<Column>(structureIDAndFName, logicalType, bufferManager, wal);
         case common::LogicalTypeID::STRING:
-            return std::make_unique<StringPropertyColumn>(
-                structureIDAndFName, logicalType, bufferManager, wal);
+            return std::make_unique<StringPropertyColumn>(structureIDAndFName, logicalType,
+                bufferManager, wal);
         case common::LogicalTypeID::VAR_LIST:
-            return std::make_unique<ListPropertyColumn>(
-                structureIDAndFName, logicalType, bufferManager, wal);
+            return std::make_unique<ListPropertyColumn>(structureIDAndFName, logicalType,
+                bufferManager, wal);
         case common::LogicalTypeID::INTERNAL_ID:
             return std::make_unique<InternalIDColumn>(structureIDAndFName, bufferManager, wal);
         case common::LogicalTypeID::STRUCT:
-            return std::make_unique<StructPropertyColumn>(
-                structureIDAndFName, logicalType, bufferManager, wal);
+            return std::make_unique<StructPropertyColumn>(structureIDAndFName, logicalType,
+                bufferManager, wal);
         case common::LogicalTypeID::SERIAL:
             return std::make_unique<SerialColumn>();
         default:

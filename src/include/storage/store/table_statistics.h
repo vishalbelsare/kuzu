@@ -90,14 +90,14 @@ protected:
     virtual inline std::unique_ptr<TableStatistics> constructTableStatistic(
         TableStatistics* tableStatistics) = 0;
 
-    virtual inline std::string getTableStatisticsFilePath(
-        const std::string& directory, common::DBFileType dbFileType) = 0;
+    virtual inline std::string getTableStatisticsFilePath(const std::string& directory,
+        common::DBFileType dbFileType) = 0;
 
-    virtual std::unique_ptr<TableStatistics> deserializeTableStatistics(
-        uint64_t numTuples, uint64_t& offset, common::FileInfo* fileInfo, uint64_t tableID) = 0;
+    virtual std::unique_ptr<TableStatistics> deserializeTableStatistics(uint64_t numTuples,
+        uint64_t& offset, common::FileInfo* fileInfo, uint64_t tableID) = 0;
 
-    virtual void serializeTableStatistics(
-        TableStatistics* tableStatistics, uint64_t& offset, common::FileInfo* fileInfo) = 0;
+    virtual void serializeTableStatistics(TableStatistics* tableStatistics, uint64_t& offset,
+        common::FileInfo* fileInfo) = 0;
 
     void readFromFile(const std::string& directory);
 

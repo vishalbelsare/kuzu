@@ -25,15 +25,16 @@ public:
     struct FileBlockInfo {
         FileBlockInfo(common::offset_t startOffset, uint64_t numBlocks,
             std::vector<uint64_t> numLinesPerBlock)
-            : startOffset{startOffset}, numBlocks{numBlocks}, numLinesPerBlock{
-                                                                  std::move(numLinesPerBlock)} {}
+            : startOffset{startOffset}, numBlocks{numBlocks},
+              numLinesPerBlock{std::move(numLinesPerBlock)} {}
         common::offset_t startOffset;
         uint64_t numBlocks;
         std::vector<uint64_t> numLinesPerBlock;
     };
 
 public:
-    TableCopyExecutor(common::CopyDescription& copyDescription, std::string outputDirectory,
+    TableCopyExecutor(transaction::Transaction* transaction,
+        common::CopyDescription& copyDescription, std::string outputDirectory,
         common::TaskScheduler& taskScheduler, catalog::Catalog& catalog, common::table_id_t tableID,
         TablesStatistics* tableStatisticsAndDeletedIDs);
 
@@ -85,6 +86,7 @@ private:
 
 protected:
     std::shared_ptr<spdlog::logger> logger;
+    transaction::Transaction* transaction;
     common::CopyDescription& copyDescription;
     std::string outputDirectory;
     std::unordered_map<std::string, FileBlockInfo> fileBlockInfos;

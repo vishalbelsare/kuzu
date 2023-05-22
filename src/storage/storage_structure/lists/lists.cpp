@@ -17,8 +17,8 @@ namespace storage {
 // be containing information about the last portion of the last large list that was read).
 void Lists::readValues(Transaction* transaction, ValueVector* valueVector, ListHandle& listHandle) {
     if (listHandle.getListSourceStore() == ListSourceStore::UPDATE_STORE) {
-        listsUpdatesStore->readValues(
-            storageStructureIDAndFName.storageStructureID.listFileID, listHandle, valueVector);
+        listsUpdatesStore->readValues(storageStructureIDAndFName.storageStructureID.listFileID,
+            listHandle, valueVector);
     } else {
         // If the startElementOffset is 0, it means that this is the first time that we read from
         // the list. As a result, we need to reset the cursor and mapper.
@@ -38,12 +38,12 @@ void Lists::readFromList(common::ValueVector* valueVector, ListHandle& listHandl
     auto pageCursor = PageUtils::getPageElementCursorForPos(
         headers->getCSROffset(listHandle.getBoundNodeOffset()) + listHandle.getStartElemOffset(),
         numElementsPerPage);
-    readBySequentialCopy(
-        Transaction::getDummyReadOnlyTrx().get(), valueVector, pageCursor, listHandle.mapper);
+    readBySequentialCopy(const_cast<Transaction*>(&DUMMY_READ_ONLY_TRX), valueVector, pageCursor,
+        listHandle.mapper);
 }
 
-uint64_t Lists::getNumElementsInPersistentStore(
-    TransactionType transactionType, offset_t nodeOffset) {
+uint64_t Lists::getNumElementsInPersistentStore(TransactionType transactionType,
+    offset_t nodeOffset) {
     if (transactionType == TransactionType::WRITE &&
         listsUpdatesStore->isNewlyAddedNode(
             storageStructureIDAndFName.storageStructureID.listFileID, nodeOffset)) {
@@ -52,8 +52,8 @@ uint64_t Lists::getNumElementsInPersistentStore(
     return getNumElementsFromListHeader(nodeOffset);
 }
 
-void Lists::initListReadingState(
-    offset_t nodeOffset, ListHandle& listHandle, TransactionType transactionType) {
+void Lists::initListReadingState(offset_t nodeOffset, ListHandle& listHandle,
+    TransactionType transactionType) {
     listHandle.resetSyncState();
     auto isNewlyAddedNode = listsUpdatesStore->isNewlyAddedNode(
         storageStructureIDAndFName.storageStructureID.listFileID, nodeOffset);
@@ -72,14 +72,14 @@ void Lists::initListReadingState(
     // reading from listsUpdatesStore directly.
     auto sourceStore = numElementsInPersistentStore == 0 ? ListSourceStore::UPDATE_STORE :
                                                            ListSourceStore::PERSISTENT_STORE;
-    listHandle.initSyncState(
-        nodeOffset, numElementsInUpdateStore, numElementsInPersistentStore, sourceStore);
+    listHandle.initSyncState(nodeOffset, numElementsInUpdateStore, numElementsInPersistentStore,
+        sourceStore);
 }
 
-std::unique_ptr<InMemList> Lists::createInMemListWithDataFromUpdateStoreOnly(
-    offset_t nodeOffset, std::vector<uint64_t>& insertedRelsTupleIdxInFT) {
-    auto inMemList = std::make_unique<InMemList>(
-        getNumElementsInListsUpdatesStore(nodeOffset), elementSize, mayContainNulls());
+std::unique_ptr<InMemList> Lists::createInMemListWithDataFromUpdateStoreOnly(offset_t nodeOffset,
+    std::vector<uint64_t>& insertedRelsTupleIdxInFT) {
+    auto inMemList = std::make_unique<InMemList>(getNumElementsInListsUpdatesStore(nodeOffset),
+        elementSize, mayContainNulls());
     listsUpdatesStore->readInsertedRelsToList(
         storageStructureIDAndFName.storageStructureID.listFileID, insertedRelsTupleIdxInFT,
         *inMemList, 0 /* numElementsInPersistentStore */, getDiskOverflowFileIfExists(), dataType);
@@ -108,8 +108,8 @@ void Lists::fillInMemListsFromPersistentStore(offset_t nodeOffset,
     const std::unordered_set<list_offset_t>& deletedRelOffsetsInList,
     UpdatedPersistentListOffsets* updatedPersistentListOffsets) {
     auto pageMapper = ListHandle::getPageMapper(metadata, nodeOffset);
-    auto pageCursor = PageUtils::getPageElementCursorForPos(
-        headers->getCSROffset(nodeOffset), numElementsPerPage);
+    auto pageCursor = PageUtils::getPageElementCursorForPos(headers->getCSROffset(nodeOffset),
+        numElementsPerPage);
     uint64_t numElementsRead = 0;
     uint64_t nextPosToWriteToInMemList = 0;
     auto numElementsToRead = numElementsInPersistentStore;
@@ -195,8 +195,8 @@ void Lists::readPropertyUpdatesToInMemListIfExists(InMemList& inMemList,
     }
 }
 
-void ListPropertyLists::readListFromPages(
-    ValueVector* valueVector, ListHandle& listHandle, PageElementCursor& pageCursor) {
+void ListPropertyLists::readListFromPages(ValueVector* valueVector, ListHandle& listHandle,
+    PageElementCursor& pageCursor) {
     uint64_t numValuesToRead = valueVector->state->originalSize;
     uint64_t vectorPos = 0;
     while (vectorPos != numValuesToRead) {
@@ -204,17 +204,17 @@ void ListPropertyLists::readListFromPages(
         uint64_t numValuesToReadInPage = std::min(numValuesInPage, numValuesToRead - vectorPos);
         auto physicalPageIdx = listHandle.mapper(pageCursor.pageIdx);
         auto [fileHandleToPin, pageIdxToPin] =
-            StorageStructureUtils::getFileHandleAndPhysicalPageIdxToPin(
-                *fileHandle, physicalPageIdx, *wal, TransactionType::READ_ONLY);
+            StorageStructureUtils::getFileHandleAndPhysicalPageIdxToPin(*fileHandle,
+                physicalPageIdx, *wal, TransactionType::READ_ONLY);
         auto frameBytesOffset = getElemByteOffset(pageCursor.elemPosInPage);
         bufferManager->optimisticRead(*fileHandleToPin, pageIdxToPin, [&](uint8_t* frame) {
             auto kuListsToRead = reinterpret_cast<common::ku_list_t*>(frame + frameBytesOffset);
-            readNullBitsFromAPage(
-                valueVector, frame, pageCursor.elemPosInPage, vectorPos, numValuesToReadInPage);
+            readNullBitsFromAPage(valueVector, frame, pageCursor.elemPosInPage, vectorPos,
+                numValuesToReadInPage);
             for (auto i = 0u; i < numValuesToReadInPage; i++) {
                 if (!valueVector->isNull(vectorPos)) {
-                    diskOverflowFile.readListToVector(
-                        TransactionType::READ_ONLY, kuListsToRead[i], valueVector, vectorPos);
+                    diskOverflowFile.readListToVector(TransactionType::READ_ONLY, kuListsToRead[i],
+                        valueVector, vectorPos);
                 }
                 vectorPos++;
             }
@@ -237,8 +237,8 @@ void ListPropertyLists::readFromList(ValueVector* valueVector, ListHandle& listH
     readListFromPages(valueVector, listHandle, pageCursor);
 }
 
-void AdjLists::readValues(
-    Transaction* transaction, ValueVector* valueVector, ListHandle& listHandle) {
+void AdjLists::readValues(Transaction* transaction, ValueVector* valueVector,
+    ListHandle& listHandle) {
     valueVector->state->selVector->resetSelectorToUnselected();
     if (listHandle.getListSourceStore() == ListSourceStore::UPDATE_STORE) {
         readFromListsUpdatesStore(listHandle, valueVector);
@@ -253,8 +253,8 @@ std::unique_ptr<std::vector<nodeID_t>> AdjLists::readAdjacencyListOfNode(
     // the nodeIDCompressionScheme into a std::vector of nodeID_t.
     offset_t nodeOffset) {
     auto pageMapper = ListHandle::getPageMapper(metadata, nodeOffset);
-    auto pageCursor = PageUtils::getPageElementCursorForPos(
-        headers->getCSROffset(nodeOffset), numElementsPerPage);
+    auto pageCursor = PageUtils::getPageElementCursorForPos(headers->getCSROffset(nodeOffset),
+        numElementsPerPage);
     // Step 1
     auto numElementsInList = getNumElementsFromListHeader(nodeOffset);
     auto listLenInBytes = numElementsInList * elementSize;
@@ -302,12 +302,11 @@ void AdjLists::readFromList(ValueVector* valueVector, ListHandle& listHandle) {
     // whether to read the wal version or the original version of the page. AdjLists never reads
     // the wal version of the page(since its updates are stored in listsUpdatesStore), so we
     // simply pass a dummy read-only transaction to readNodeIDsBySequentialCopy.
-    auto dummyReadOnlyTrx = Transaction::getDummyReadOnlyTrx();
     auto pageCursor = PageUtils::getPageElementCursorForPos(
         headers->getCSROffset(listHandle.getBoundNodeOffset()) + startOffsetToRead,
         numElementsPerPage);
-    readInternalIDsBySequentialCopy(dummyReadOnlyTrx.get(), valueVector, pageCursor,
-        listHandle.mapper, nbrTableID, true /* hasNoNullGuarantee */);
+    readInternalIDsBySequentialCopy(const_cast<Transaction*>(&DUMMY_READ_ONLY_TRX), valueVector,
+        pageCursor, listHandle.mapper, nbrTableID, true /* hasNoNullGuarantee */);
     // We set the startIdx + numValuesToRead == numValuesInList in listSyncState to indicate to
     // the callers (e.g., the adj_list_extend or var_len_extend) that we have read the small
     // list already. This allows the callers to know when to switch to reading from the update
@@ -320,16 +319,16 @@ void AdjLists::readFromListsUpdatesStore(ListHandle& listHandle, ValueVector* va
         // We have read all values from persistent store or the persistent store is empty, we should
         // reset listSyncState to indicate ranges in listsUpdatesStore and start
         // reading from it.
-        listHandle.setRangeToRead(
-            0, std::min(DEFAULT_VECTOR_CAPACITY, (uint64_t)listHandle.getNumValuesInList()));
+        listHandle.setRangeToRead(0,
+            std::min(DEFAULT_VECTOR_CAPACITY, (uint64_t)listHandle.getNumValuesInList()));
     } else {
         listHandle.setRangeToRead(listHandle.getEndElemOffset(),
             std::min(DEFAULT_VECTOR_CAPACITY,
                 (uint64_t)listHandle.getNumValuesInList() - listHandle.getEndElemOffset()));
     }
     // Note that: we always store nbr node in the second column of factorizedTable.
-    listsUpdatesStore->readValues(
-        storageStructureIDAndFName.storageStructureID.listFileID, listHandle, valueVector);
+    listsUpdatesStore->readValues(storageStructureIDAndFName.storageStructureID.listFileID,
+        listHandle, valueVector);
 }
 
 void AdjLists::readFromPersistentStore(ListHandle& listHandle, ValueVector* valueVector) {
@@ -343,8 +342,8 @@ void AdjLists::readFromPersistentStore(ListHandle& listHandle, ValueVector* valu
 
 // Note: this function will always be called right after scanRelID, so we have the
 // guarantee that the relIDVector is always unselected.
-void RelIDList::setDeletedRelsIfNecessary(
-    Transaction* transaction, ListHandle& listHandle, ValueVector* relIDVector) {
+void RelIDList::setDeletedRelsIfNecessary(Transaction* transaction, ListHandle& listHandle,
+    ValueVector* relIDVector) {
     // We only need to unselect the positions for deleted rels when we are reading from the
     // persistent store in a write transaction and the current nodeOffset has deleted rels in
     // persistent store.
@@ -372,8 +371,8 @@ std::unordered_set<uint64_t> RelIDList::getDeletedRelOffsetsInListForNodeOffset(
     offset_t nodeOffset) {
     std::unordered_set<uint64_t> deletedRelOffsetsInList;
     auto pageMapper = ListHandle::getPageMapper(metadata, nodeOffset);
-    auto pageCursor = PageUtils::getPageElementCursorForPos(
-        headers->getCSROffset(nodeOffset), numElementsPerPage);
+    auto pageCursor = PageUtils::getPageElementCursorForPos(headers->getCSROffset(nodeOffset),
+        numElementsPerPage);
     auto numElementsInPersistentStore = getNumElementsFromListHeader(nodeOffset);
     uint64_t numElementsRead = 0;
     while (numElementsRead < numElementsInPersistentStore) {
@@ -400,8 +399,8 @@ std::unordered_set<uint64_t> RelIDList::getDeletedRelOffsetsInListForNodeOffset(
 
 list_offset_t RelIDList::getListOffset(offset_t nodeOffset, offset_t relOffset) {
     auto pageMapper = ListHandle::getPageMapper(metadata, nodeOffset);
-    auto pageCursor = PageUtils::getPageElementCursorForPos(
-        headers->getCSROffset(nodeOffset), numElementsPerPage);
+    auto pageCursor = PageUtils::getPageElementCursorForPos(headers->getCSROffset(nodeOffset),
+        numElementsPerPage);
     auto numElementsInPersistentStore = getNumElementsFromListHeader(nodeOffset);
     uint64_t numElementsRead = 0;
     uint64_t retVal = UINT64_MAX;
@@ -432,7 +431,7 @@ void RelIDList::readFromList(ValueVector* valueVector, ListHandle& listHandle) {
     auto pageCursor = PageUtils::getPageElementCursorForPos(
         headers->getCSROffset(listHandle.getBoundNodeOffset()) + listHandle.getStartElemOffset(),
         numElementsPerPage);
-    readInternalIDsBySequentialCopy(Transaction::getDummyReadOnlyTrx().get(), valueVector,
+    readInternalIDsBySequentialCopy(const_cast<Transaction*>(&DUMMY_READ_ONLY_TRX), valueVector,
         pageCursor, listHandle.mapper, getRelTableID(), true /* hasNoNullGuarantee */);
 }
 

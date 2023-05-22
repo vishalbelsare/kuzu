@@ -18,7 +18,8 @@ bool SetNodeProperty::getNextTuplesInternal(ExecutionContext* context) {
     for (auto i = 0u; i < infos.size(); ++i) {
         auto info = infos[i].get();
         info->evaluator->evaluate();
-        info->column->write(nodeIDVectors[i], info->evaluator->resultVector.get());
+        info->column->write(context->transaction, nodeIDVectors[i],
+            info->evaluator->resultVector.get());
     }
     return true;
 }
@@ -28,8 +29,8 @@ std::unique_ptr<PhysicalOperator> SetNodeProperty::clone() {
     for (auto& info : infos) {
         clonedInfos.push_back(info->clone());
     }
-    return make_unique<SetNodeProperty>(
-        std::move(clonedInfos), children[0]->clone(), id, paramsString);
+    return make_unique<SetNodeProperty>(std::move(clonedInfos), children[0]->clone(), id,
+        paramsString);
 }
 
 void SetRelProperty::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) {
@@ -62,8 +63,8 @@ std::unique_ptr<PhysicalOperator> SetRelProperty::clone() {
     for (auto& info : infos) {
         clonedInfos.push_back(info->clone());
     }
-    return make_unique<SetRelProperty>(
-        std::move(clonedInfos), children[0]->clone(), id, paramsString);
+    return make_unique<SetRelProperty>(std::move(clonedInfos), children[0]->clone(), id,
+        paramsString);
 }
 
 } // namespace processor

@@ -12,11 +12,12 @@ namespace storage {
 class NodeCopyExecutor : public TableCopyExecutor {
 
 public:
-    NodeCopyExecutor(common::CopyDescription& copyDescription, std::string outputDirectory,
+    NodeCopyExecutor(transaction::Transaction* transaction,
+        common::CopyDescription& copyDescription, std::string outputDirectory,
         common::TaskScheduler& taskScheduler, catalog::Catalog& catalog, storage::NodeTable* table,
         NodesStatisticsAndDeletedIDs* nodesStatisticsAndDeletedIDs)
-        : TableCopyExecutor{copyDescription, std::move(outputDirectory), taskScheduler, catalog,
-              table->getTableID(), nodesStatisticsAndDeletedIDs},
+        : TableCopyExecutor{transaction, copyDescription, std::move(outputDirectory), taskScheduler,
+              catalog, table->getTableID(), nodesStatisticsAndDeletedIDs},
           table{table} {}
 
 protected:

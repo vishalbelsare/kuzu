@@ -2,6 +2,7 @@
 
 using namespace kuzu::catalog;
 using namespace kuzu::common;
+using namespace kuzu::transaction;
 
 namespace kuzu {
 namespace storage {
@@ -26,19 +27,19 @@ void NodeTable::initializeData(NodeTableSchema* nodeTableSchema) {
     }
 }
 
-void NodeTable::scan(transaction::Transaction* transaction, ValueVector* inputIDVector,
+void NodeTable::scan(Transaction* txn, ValueVector* inputIDVector,
     const std::vector<uint32_t>& columnIds, std::vector<ValueVector*> outputVectors) {
     assert(columnIds.size() == outputVectors.size());
     for (auto i = 0u; i < columnIds.size(); i++) {
         if (columnIds[i] == UINT32_MAX) {
             outputVectors[i]->setAllNull();
         } else {
-            propertyColumns.at(columnIds[i])->read(transaction, inputIDVector, outputVectors[i]);
+            propertyColumns.at(columnIds[i])->read(txn, inputIDVector, outputVectors[i]);
         }
     }
 }
 
-offset_t NodeTable::addNodeAndResetProperties(ValueVector* primaryKeyVector) {
+offset_t NodeTable::addNodeAndResetProperties(Transaction* txn, ValueVector* primaryKeyVector) {
     auto nodeOffset = nodesStatisticsAndDeletedIDs->addNode(tableID);
     assert(primaryKeyVector->state->selVector->selectedSize == 1);
     auto pkValPos = primaryKeyVector->state->selVector->selectedPositions[0];
@@ -58,7 +59,7 @@ offset_t NodeTable::addNodeAndResetProperties(ValueVector* primaryKeyVector) {
     return nodeOffset;
 }
 
-void NodeTable::deleteNodes(ValueVector* nodeIDVector, ValueVector* primaryKeyVector) {
+void NodeTable::deleteNodes(Transaction* txn, ValueVector* nodeIDVector, ValueVector* primaryKeyVector) {
     assert(nodeIDVector->state == primaryKeyVector->state && nodeIDVector->hasNoNullsGuarantee() &&
            primaryKeyVector->hasNoNullsGuarantee());
     if (nodeIDVector->state->selVector->selectedSize == 1) {

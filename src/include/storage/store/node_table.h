@@ -17,16 +17,16 @@ public:
 
     void initializeData(catalog::NodeTableSchema* nodeTableSchema);
 
-    inline common::offset_t getMaxNodeOffset(transaction::Transaction* trx) const {
-        return nodesStatisticsAndDeletedIDs->getMaxNodeOffset(trx, tableID);
+    inline common::offset_t getMaxNodeOffset(transaction::Transaction* txn) const {
+        return nodesStatisticsAndDeletedIDs->getMaxNodeOffset(txn, tableID);
     }
-    inline void setSelVectorForDeletedOffsets(
-        transaction::Transaction* trx, std::shared_ptr<common::ValueVector>& vector) const {
+    inline void setSelVectorForDeletedOffsets(transaction::Transaction* txn,
+        std::shared_ptr<common::ValueVector>& vector) const {
         assert(vector->isSequential());
-        nodesStatisticsAndDeletedIDs->setDeletedNodeOffsetsForMorsel(trx, vector, tableID);
+        nodesStatisticsAndDeletedIDs->setDeletedNodeOffsetsForMorsel(txn, vector, tableID);
     }
 
-    void scan(transaction::Transaction* transaction, common::ValueVector* inputIDVector,
+    void scan(transaction::Transaction* txn, common::ValueVector* inputIDVector,
         const std::vector<uint32_t>& columnIdxes, std::vector<common::ValueVector*> outputVectors);
 
     inline Column* getPropertyColumn(common::property_id_t propertyIdx) {
@@ -39,17 +39,19 @@ public:
     }
     inline common::table_id_t getTableID() const { return tableID; }
 
-    inline void removeProperty(common::property_id_t propertyID) {
+    inline void removeProperty(transaction::Transaction* txn, common::property_id_t propertyID) {
         propertyColumns.erase(propertyID);
     }
-    inline void addProperty(const catalog::Property& property) {
+    inline void addProperty(transaction::Transaction* txn, const catalog::Property& property) {
         propertyColumns.emplace(property.propertyID,
             ColumnFactory::getColumn(StorageUtils::getNodePropertyColumnStructureIDAndFName(
                                          wal->getDirectory(), property),
                 property.dataType, &bufferManager, wal));
     }
-    common::offset_t addNodeAndResetProperties(common::ValueVector* primaryKeyVector);
-    void deleteNodes(common::ValueVector* nodeIDVector, common::ValueVector* primaryKeyVector);
+    common::offset_t addNodeAndResetProperties(transaction::Transaction* txn,
+        common::ValueVector* primaryKeyVector);
+    void deleteNodes(transaction::Transaction* txn, common::ValueVector* nodeIDVector,
+        common::ValueVector* primaryKeyVector);
 
     void prepareCommit();
     void prepareRollback();
@@ -57,8 +59,8 @@ public:
     inline void rollback() { pkIndex->rollback(); }
 
 private:
-    void deleteNode(
-        common::offset_t nodeOffset, common::ValueVector* primaryKeyVector, uint32_t pos) const;
+    void deleteNode(common::offset_t nodeOffset, common::ValueVector* primaryKeyVector,
+        uint32_t pos) const;
 
 private:
     NodesStatisticsAndDeletedIDs* nodesStatisticsAndDeletedIDs;

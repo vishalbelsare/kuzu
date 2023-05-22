@@ -131,7 +131,7 @@ TEST_F(CopyNodePropertyTest, NodeStructuredStringPropertyTest) {
     ASSERT_TRUE(f.is_open());
     int lineIdx = 0;
     uint64_t count = 0;
-    auto dummyReadOnlyTrx = Transaction::getDummyReadOnlyTrx();
+    auto dummyReadOnlyTrx = const_cast<Transaction*>(&DUMMY_READ_ONLY_TRX);
     while (f.good()) {
         std::string line;
         std::getline(f, line);
@@ -147,9 +147,9 @@ TEST_F(CopyNodePropertyTest, NodeStructuredStringPropertyTest) {
             line = line.substr(0, line.length() - 1);
         }
         if ((count % 100) == 0) {
-            ASSERT_TRUE(column->isNull(count /* nodeOffset */, dummyReadOnlyTrx.get()));
+            ASSERT_TRUE(column->isNull(count /* nodeOffset */, dummyReadOnlyTrx));
         } else {
-            ASSERT_FALSE(column->isNull(count /* nodeOffset */, dummyReadOnlyTrx.get()));
+            ASSERT_FALSE(column->isNull(count /* nodeOffset */, dummyReadOnlyTrx));
             EXPECT_EQ(line, column->readValueForTestingOnly(lineIdx).strVal);
         }
         lineIdx++;

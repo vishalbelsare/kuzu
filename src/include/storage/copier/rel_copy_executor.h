@@ -17,13 +17,12 @@ class RelCopyExecutor : public TableCopyExecutor {
     };
 
 public:
-    RelCopyExecutor(common::CopyDescription& copyDescription, std::string outputDirectory,
-        common::TaskScheduler& taskScheduler, catalog::Catalog& catalog,
-        storage::NodesStore& nodesStore, storage::RelTable* table, RelsStatistics* relsStatistics);
+    RelCopyExecutor(transaction::Transaction* transaction, common::CopyDescription& copyDescription,
+        std::string outputDirectory, common::TaskScheduler& taskScheduler,
+        catalog::Catalog& catalog, storage::NodesStore& nodesStore, storage::RelTable* table,
+        RelsStatistics* relsStatistics);
 
 private:
-    static std::string getTaskTypeName(PopulateTaskType populateTaskType);
-
     void initializeColumnsAndLists() override;
 
     void populateColumnsAndLists(processor::ExecutionContext* executionContext) override;
@@ -71,8 +70,8 @@ private:
     template<typename T>
     static void inferTableIDsAndOffsets(const std::vector<std::shared_ptr<T>>& batchColumns,
         std::vector<common::nodeID_t>& nodeIDs, std::vector<common::LogicalType>& nodeIDTypes,
-        const std::map<common::table_id_t, PrimaryKeyIndex*>& pkIndexes,
-        transaction::Transaction* transaction, int64_t blockOffset, int64_t& colIndex);
+        const std::map<common::table_id_t, PrimaryKeyIndex*>& pkIndexes, int64_t blockOffset,
+        int64_t& colIndex);
 
     template<typename T>
     static void putPropsOfLineIntoColumns(RelCopyExecutor* copier,
@@ -147,7 +146,6 @@ private:
     storage::NodesStore& nodesStore;
     storage::RelTable* table;
     const std::map<common::table_id_t, common::offset_t> maxNodeOffsetsPerTable;
-    std::unique_ptr<transaction::Transaction> dummyReadOnlyTrx;
     std::map<common::table_id_t, PrimaryKeyIndex*> pkIndexes;
     std::atomic<uint64_t> numRels = 0;
     std::vector<std::unique_ptr<atomic_uint64_vec_t>> listSizesPerDirection{2};
