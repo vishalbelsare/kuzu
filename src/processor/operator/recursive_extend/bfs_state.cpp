@@ -26,6 +26,8 @@ void BaseBFSMorsel::resetState() {
     currentFrontier->resetState();
     nextFrontier->resetState();
     numTargetDstNodes = 0;
+    startTimeInMillis = 0u;
+    srcOffset = 0u;
 }
 
 void ShortestPathBFSMorsel::markSrc(common::offset_t offset) {

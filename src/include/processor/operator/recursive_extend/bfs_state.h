@@ -63,6 +63,8 @@ struct BaseBFSMorsel {
     // not visit all target dst nodes because they may simply not connect to src.
     uint64_t numTargetDstNodes;
     std::vector<common::offset_t> targetDstNodeOffsets;
+    uint64_t startTimeInMillis;
+    common::offset_t srcOffset;
 
     explicit BaseBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound, uint8_t upperBound,
         NodeOffsetSemiMask* semiMask)

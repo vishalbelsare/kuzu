@@ -44,6 +44,9 @@ bool BaseRecursiveJoin::getNextTuplesInternal(ExecutionContext* context) {
         sharedState->inputFTableSharedState->getTable()->scan(vectorsToScan,
             inputFTableMorsel->startTupleIdx, inputFTableMorsel->numTuples, colIndicesToScan);
         bfsMorsel->resetState();
+        auto duration = std::chrono::system_clock::now().time_since_epoch();
+        bfsMorsel->startTimeInMillis =
+            std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
         computeBFS(context); // Phase 1
         outputCursor = 0;    // Reset cursor for result scanning.
     }
@@ -53,6 +56,7 @@ void BaseRecursiveJoin::computeBFS(ExecutionContext* context) {
     auto nodeID = srcNodeIDVector->getValue<common::nodeID_t>(
         srcNodeIDVector->state->selVector->selectedPositions[0]);
     bfsMorsel->markSrc(nodeID.offset);
+    bfsMorsel->srcOffset = nodeID.offset;
     while (!bfsMorsel->isComplete()) {
         auto nodeOffset = bfsMorsel->getNextNodeOffset();
         if (nodeOffset != common::INVALID_OFFSET) {

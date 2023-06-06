@@ -35,6 +35,10 @@ bool ShortestPathRecursiveJoin::scanOutput() {
         dstNodeIDVector->state->initOriginalAndSelectedSize(vectorSize);
         return true;
     } else {
+        auto duration = std::chrono::system_clock::now().time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+        printf("SSSP with src: %lu completed in: %lu ms\n", bfsMorsel->srcOffset,
+            millis - bfsMorsel->startTimeInMillis);
         isSSSPComplete = false;
         return false;
     }
