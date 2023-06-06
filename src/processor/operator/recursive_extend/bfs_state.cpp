@@ -18,6 +18,9 @@ void BaseBFSMorsel::moveNextLevelAsCurrentLevel() {
     if (currentLevel < upperBound) { // No need to sort if we are not extending further.
         std::sort(currentFrontier->nodeOffsets.begin(), currentFrontier->nodeOffsets.end());
     }
+    auto duration = std::chrono::system_clock::now().time_since_epoch();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    printf("Moving to level: %u for source: %lu, at time: %lu\n", currentLevel, srcOffset, millis);
 }
 
 void BaseBFSMorsel::resetState() {
