@@ -39,7 +39,6 @@ void ShortestPathBFSMorsel::markSrc(common::offset_t offset) {
 void ShortestPathBFSMorsel::markVisited(common::offset_t offset, uint64_t multiplicity) {
     if (visitedNodes[offset] == NOT_VISITED_DST) {
         visitedNodes[offset] = VISITED_DST;
-        dstNodeOffsets.push_back(offset);
         dstNodeOffset2PathLength[offset] = currentLevel + 1;
         numVisitedDstNodes++;
         nextFrontier->nodeOffsets.push_back(offset);
@@ -51,7 +50,6 @@ void ShortestPathBFSMorsel::markVisited(common::offset_t offset, uint64_t multip
 
 void ShortestPathBFSMorsel::resetVisitedState() {
     numVisitedDstNodes = 0;
-    dstNodeOffsets.clear();
     std::fill(dstNodeOffset2PathLength.begin(), dstNodeOffset2PathLength.end(), 0u);
     if (!isAllDstTarget()) {
         std::fill(visitedNodes, visitedNodes + maxOffset + 1, (uint8_t)VisitedState::NOT_VISITED);

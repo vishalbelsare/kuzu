@@ -100,7 +100,6 @@ struct ShortestPathBFSMorsel : public BaseBFSMorsel {
     uint64_t numVisitedDstNodes;
     uint8_t* visitedNodes;
     // Results
-    std::vector<common::offset_t> dstNodeOffsets;
     std::vector<uint64_t> dstNodeOffset2PathLength;
 
     ShortestPathBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound, uint8_t upperBound,

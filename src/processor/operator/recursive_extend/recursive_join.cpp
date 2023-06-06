@@ -67,6 +67,7 @@ void BaseRecursiveJoin::computeBFS(ExecutionContext* context) {
             bfsMorsel->finalizeCurrentLevel();
         }
     }
+    isSSSPComplete = true;
 }
 
 void BaseRecursiveJoin::updateVisitedNodes(uint64_t multiplicity) {

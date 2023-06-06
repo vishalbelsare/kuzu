@@ -75,7 +75,7 @@ public:
           sharedState{std::move(sharedState)}, vectorsToScanPos{std::move(vectorsToScanPos)},
           colIndicesToScan{std::move(colIndicesToScan)}, srcNodeIDVectorPos{srcNodeIDVectorPos},
           dstNodeIDVectorPos{dstNodeIDVectorPos}, tmpDstNodeIDVectorPos{tmpDstNodeIDVectorPos},
-          recursiveRoot{std::move(recursiveRoot)}, outputCursor{0} {}
+          recursiveRoot{std::move(recursiveRoot)}, outputCursor{0}, isSSSPComplete{false} {}
 
     virtual ~BaseRecursiveJoin() = default;
 
@@ -125,6 +125,7 @@ protected:
 
     std::unique_ptr<BaseBFSMorsel> bfsMorsel;
     size_t outputCursor;
+    bool isSSSPComplete;
 };
 
 } // namespace processor

@@ -15,23 +15,29 @@ void ShortestPathRecursiveJoin::initLocalStateInternal(
 
 bool ShortestPathRecursiveJoin::scanOutput() {
     auto morsel = (ShortestPathBFSMorsel*)bfsMorsel.get();
-    if (outputCursor == morsel->dstNodeOffsets.size()) {
+    // if sssp is not complete, nothing to write so return false
+    if (!isSSSPComplete) {
         return false;
     }
     auto vectorSize = 0u;
     while (vectorSize != common::DEFAULT_VECTOR_CAPACITY &&
-           outputCursor < morsel->dstNodeOffsets.size()) {
-        auto offset = morsel->dstNodeOffsets[outputCursor];
-        if (morsel->dstNodeOffset2PathLength[offset] >= lowerBound) {
+           outputCursor < morsel->dstNodeOffset2PathLength.size()) {
+        if (morsel->dstNodeOffset2PathLength[outputCursor] >= lowerBound) {
             dstNodeIDVector->setValue<common::nodeID_t>(
-                vectorSize, common::nodeID_t{offset, nodeTable->getTableID()});
-            distanceVector->setValue<int64_t>(vectorSize, morsel->dstNodeOffset2PathLength[offset]);
+                vectorSize, common::nodeID_t{outputCursor, nodeTable->getTableID()});
+            distanceVector->setValue<int64_t>(vectorSize,
+                morsel->dstNodeOffset2PathLength[outputCursor]);
             vectorSize++;
         }
         outputCursor++;
     }
-    dstNodeIDVector->state->initOriginalAndSelectedSize(vectorSize);
-    return true;
+    if(vectorSize > 0) {
+        dstNodeIDVector->state->initOriginalAndSelectedSize(vectorSize);
+        return true;
+    } else {
+        isSSSPComplete = false;
+        return false;
+    }
 }
 
 } // namespace processor
