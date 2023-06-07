@@ -9,7 +9,6 @@ void ShortestPathRecursiveJoin::initLocalStateInternal(
     distanceVector = resultSet->getValueVector(distanceVectorPos);
     maxOffset = nodeTable->getMaxNodeOffset(transaction);
     bfsMorsel = nullptr;
-    bfsMorsel->resetState();
 }
 
 bool ShortestPathRecursiveJoin::scanOutput() {

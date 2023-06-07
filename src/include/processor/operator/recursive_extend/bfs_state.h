@@ -78,6 +78,7 @@ struct BaseBFSMorsel {
                     targetDstNodeOffsets.push_back(offset);
                 }
             }
+            numTargetDstNodes = targetDstNodeOffsets.size();
         }
     }
     virtual ~BaseBFSMorsel() = default;
