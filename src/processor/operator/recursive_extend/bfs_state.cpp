@@ -4,19 +4,26 @@ namespace kuzu {
 namespace processor {
 
 common::offset_t BaseBFSMorsel::getNextNodeOffset() {
-    if (nextNodeIdxToExtend == currentFrontier->nodeOffsets.size()) {
+    if (nextNodeIdxToExtend == bfsLevelNodeOffsets.size()) {
         return common::INVALID_OFFSET;
     }
-    return currentFrontier->nodeOffsets[nextNodeIdxToExtend++];
+    return bfsLevelNodeOffsets[nextNodeIdxToExtend++];
 }
 
 void BaseBFSMorsel::moveNextLevelAsCurrentLevel() {
-    currentFrontier = std::move(nextFrontier);
     currentLevel++;
     nextNodeIdxToExtend = 0;
-    nextFrontier = createFrontier();
-    if (currentLevel < upperBound) { // No need to sort if we are not extending further.
-        std::sort(currentFrontier->nodeOffsets.begin(), currentFrontier->nodeOffsets.end());
+    bfsLevelNodeOffsets.clear();
+    auto ssspMorsel = (ShortestPathBFSMorsel*)this;
+    if (currentLevel < upperBound) { // No need to prepare if we are not extending further.
+        for(auto i = 0u; i < (maxOffset+1); i++) {
+            if(ssspMorsel->visitedNodes[i] == VISITED_DST_NEW) {
+                ssspMorsel->visitedNodes[i] = VISITED_DST;
+                bfsLevelNodeOffsets.push_back(i);
+            } else if(ssspMorsel->visitedNodes[i] == VISITED_NEW) {
+                ssspMorsel->visitedNodes[i] = VISITED;
+            }
+        }
     }
     auto duration = std::chrono::system_clock::now().time_since_epoch();
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
@@ -26,8 +33,7 @@ void BaseBFSMorsel::moveNextLevelAsCurrentLevel() {
 void BaseBFSMorsel::resetState() {
     currentLevel = 0;
     nextNodeIdxToExtend = 0;
-    currentFrontier->resetState();
-    nextFrontier->resetState();
+    bfsLevelNodeOffsets.clear();
     numTargetDstNodes = 0;
     startTimeInMillis = 0u;
     srcOffset = 0u;
@@ -37,19 +43,19 @@ void ShortestPathBFSMorsel::markSrc(common::offset_t offset) {
     if (visitedNodes[offset] == NOT_VISITED_DST) {
         visitedNodes[offset] = VISITED_DST;
         numVisitedDstNodes++;
+    } else {
+        visitedNodes[offset] = VISITED;
     }
-    currentFrontier->nodeOffsets.push_back(offset);
+    bfsLevelNodeOffsets.push_back(offset);
 }
 
 void ShortestPathBFSMorsel::markVisited(common::offset_t offset, uint64_t multiplicity) {
     if (visitedNodes[offset] == NOT_VISITED_DST) {
-        visitedNodes[offset] = VISITED_DST;
+        visitedNodes[offset] = VISITED_DST_NEW;
         dstNodeOffset2PathLength[offset] = currentLevel + 1;
         numVisitedDstNodes++;
-        nextFrontier->nodeOffsets.push_back(offset);
     } else if (visitedNodes[offset] == NOT_VISITED) {
-        visitedNodes[offset] = VISITED;
-        nextFrontier->nodeOffsets.push_back(offset);
+        visitedNodes[offset] = VISITED_NEW;
     }
 }
 
@@ -69,7 +75,7 @@ void ShortestPathBFSMorsel::resetVisitedState() {
     }
 }
 
-void VariableLengthBFSMorsel::updateNumPathFromCurrentFrontier() {
+/*void VariableLengthBFSMorsel::updateNumPathFromCurrentFrontier() {
     if (currentLevel < lowerBound) {
         return;
     }
@@ -86,7 +92,7 @@ void VariableLengthBFSMorsel::updateNumPathFromCurrentFrontier() {
             updateNumPath(offset, currentFrontier->getMultiplicity(offset));
         }
     }
-}
+}*/
 
 } // namespace processor
 } // namespace kuzu

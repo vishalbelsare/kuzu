@@ -1,3 +1,4 @@
+/*
 #pragma once
 
 #include "recursive_join.h"
@@ -43,3 +44,4 @@ private:
 
 } // namespace processor
 } // namespace kuzu
+*/

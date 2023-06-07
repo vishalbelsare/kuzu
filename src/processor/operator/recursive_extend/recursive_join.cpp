@@ -60,7 +60,6 @@ void BaseRecursiveJoin::computeBFS(ExecutionContext* context) {
     while (!bfsMorsel->isComplete()) {
         auto nodeOffset = bfsMorsel->getNextNodeOffset();
         if (nodeOffset != common::INVALID_OFFSET) {
-            // auto multiplicity = bfsMorsel->currentFrontier->getMultiplicity(nodeOffset);
             // Found a starting node from current frontier.
             scanBFSLevel->setNodeID(common::nodeID_t{nodeOffset, nodeTable->getTableID()});
             while (recursiveRoot->getNextTuple(context)) { // Exhaust recursive plan.

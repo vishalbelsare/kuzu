@@ -1,3 +1,4 @@
+/*
 #include "processor/operator/recursive_extend/variable_length_recursive_join.h"
 
 namespace kuzu {
@@ -38,3 +39,4 @@ bool VariableLengthRecursiveJoin::scanOutput() {
 
 } // namespace processor
 } // namespace kuzu
+*/

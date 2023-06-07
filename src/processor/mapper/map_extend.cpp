@@ -165,12 +165,12 @@ std::unique_ptr<PhysicalOperator> PlanMapper::mapLogicalRecursiveExtendToPhysica
             std::move(resultCollector), getOperatorID(), extend->getExpressionsForPrinting(),
             std::move(scanRelTable));
     }
-    case common::QueryRelType::VARIABLE_LENGTH: {
+    /*case common::QueryRelType::VARIABLE_LENGTH: {
         return std::make_unique<VariableLengthRecursiveJoin>(rel->getLowerBound(),
             rel->getUpperBound(), nodeTable, sharedState, outDataPoses, colIndicesToScan,
             inNodeIDVectorPos, outNodeIDVectorPos, tmpDstNodePos, std::move(resultCollector),
             getOperatorID(), extend->getExpressionsForPrinting(), std::move(scanRelTable));
-    }
+    }*/
     default:
         throw common::NotImplementedException("PlanMapper::mapLogicalRecursiveExtendToPhysical");
     }

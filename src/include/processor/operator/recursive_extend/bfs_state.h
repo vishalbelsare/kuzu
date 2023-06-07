@@ -10,6 +10,8 @@ enum VisitedState : uint8_t {
     VISITED_DST = 1,
     NOT_VISITED = 2,
     VISITED = 3,
+    VISITED_NEW = 4,
+    VISITED_DST_NEW = 5
 };
 
 struct Frontier {
@@ -55,8 +57,7 @@ struct BaseBFSMorsel {
     // Level state
     uint8_t currentLevel;
     uint64_t nextNodeIdxToExtend; // next node to extend from current frontier.
-    std::unique_ptr<Frontier> currentFrontier;
-    std::unique_ptr<Frontier> nextFrontier;
+    std::vector<common::offset_t> bfsLevelNodeOffsets;
     // Target information.
     // Target dst nodes are populated from semi mask and is expected to have small size.
     // TargetDstNodeOffsets is empty if no semi mask available. Note that at the end of BFS, we may
@@ -69,7 +70,8 @@ struct BaseBFSMorsel {
     explicit BaseBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound, uint8_t upperBound,
         NodeOffsetSemiMask* semiMask)
         : maxOffset{maxOffset}, lowerBound{lowerBound}, upperBound{upperBound}, currentLevel{0},
-          nextNodeIdxToExtend{0}, numTargetDstNodes{0} {
+          nextNodeIdxToExtend{0}, numTargetDstNodes{0},
+          bfsLevelNodeOffsets{std::vector<common::offset_t>()} {
         if (semiMask->isEnabled()) {
             for (auto offset = 0u; offset < maxOffset + 1; ++offset) {
                 if (semiMask->isNodeMasked(offset)) {
@@ -90,7 +92,7 @@ struct BaseBFSMorsel {
     virtual void finalizeCurrentLevel() = 0;
 
 protected:
-    inline bool isCurrentFrontierEmpty() const { return currentFrontier->nodeOffsets.empty(); }
+    inline bool isCurrentFrontierEmpty() const { return bfsLevelNodeOffsets.empty(); }
     inline bool isUpperBoundReached() const { return currentLevel == upperBound; }
     inline bool isAllDstTarget() const { return targetDstNodeOffsets.empty(); }
     void moveNextLevelAsCurrentLevel();
@@ -107,8 +109,6 @@ struct ShortestPathBFSMorsel : public BaseBFSMorsel {
     ShortestPathBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound, uint8_t upperBound,
         NodeOffsetSemiMask* semiMask)
         : BaseBFSMorsel{maxOffset, lowerBound, upperBound, semiMask}, numVisitedDstNodes{0} {
-        currentFrontier = std::make_unique<Frontier>();
-        nextFrontier = std::make_unique<Frontier>();
         visitedNodesBuffer = std::make_unique<uint8_t[]>(maxOffset + 1 * sizeof(uint8_t));
         visitedNodes = visitedNodesBuffer.get();
         dstNodeOffset2PathLength = std::vector<uint64_t>(maxOffset + 1, 0u);
@@ -123,7 +123,9 @@ struct ShortestPathBFSMorsel : public BaseBFSMorsel {
     }
     void markSrc(common::offset_t offset) override;
     void markVisited(common::offset_t offset, uint64_t multiplicity) override;
-    inline void finalizeCurrentLevel() override { moveNextLevelAsCurrentLevel(); }
+    inline void finalizeCurrentLevel() override {
+        moveNextLevelAsCurrentLevel();
+    }
 
 private:
     inline bool isAllDstReached() const { return numVisitedDstNodes == numTargetDstNodes; }
@@ -136,10 +138,12 @@ private:
     std::unique_ptr<uint8_t[]> visitedNodesBuffer;
 };
 
-struct VariableLengthBFSMorsel : public BaseBFSMorsel {
+/*struct VariableLengthBFSMorsel : public BaseBFSMorsel {
     // Results
     std::vector<common::offset_t> dstNodeOffsets;
     std::unordered_map<common::offset_t, uint64_t> dstNodeOffset2NumPath;
+    std::unique_ptr<Frontier> currentFrontier;
+    std::unique_ptr<Frontier> nextFrontier;
 
     explicit VariableLengthBFSMorsel(common::offset_t maxOffset, uint8_t lowerBound,
         uint8_t upperBound, NodeOffsetSemiMask* semiMask)
@@ -182,7 +186,7 @@ private:
     inline std::unique_ptr<Frontier> createFrontier() override {
         return std::make_unique<FrontierWithMultiplicity>();
     }
-};
+};*/
 
 } // namespace processor
 } // namespace kuzu
