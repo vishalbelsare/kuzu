@@ -16,14 +16,22 @@ void BaseBFSMorsel::moveNextLevelAsCurrentLevel() {
     bfsLevelNodeOffsets.clear();
     auto ssspMorsel = (ShortestPathBFSMorsel*)this;
     if (currentLevel < upperBound) { // No need to prepare if we are not extending further.
-        for(auto i = 0u; i < (maxOffset+1); i++) {
+        auto duration = std::chrono::system_clock::now().time_since_epoch();
+        auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+        for(common::offset_t i = 0u; i < (maxOffset+1); i++) {
             if(ssspMorsel->visitedNodes[i] == VISITED_DST_NEW) {
                 ssspMorsel->visitedNodes[i] = VISITED_DST;
                 bfsLevelNodeOffsets.push_back(i);
+                printf("marking: %lu as VISITED_DST\n", i);
             } else if(ssspMorsel->visitedNodes[i] == VISITED_NEW) {
                 ssspMorsel->visitedNodes[i] = VISITED;
+                bfsLevelNodeOffsets.push_back(i);
             }
         }
+        auto duration1 = std::chrono::system_clock::now().time_since_epoch();
+        auto millis1 = std::chrono::duration_cast<std::chrono::milliseconds>(duration1).count();
+        printf("Time taken: %lu to prepare for level: %u by scanning: %lu offsets\n",
+            (millis1 - millis), currentLevel, maxOffset+1);
     }
     auto duration = std::chrono::system_clock::now().time_since_epoch();
     auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
