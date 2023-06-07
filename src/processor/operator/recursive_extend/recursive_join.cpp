@@ -34,7 +34,7 @@ bool BaseRecursiveJoin::getNextTuplesInternal(ExecutionContext* context) {
     // if statement checks if we are in the outputting phase and if so, scans a vector to output and
     // returns true. Otherwise, we compute a new BFS.
     while (true) {
-        if (scanOutput()) { // Phase 2
+        if (bfsMorsel && scanOutput()) { // Phase 2
             return true;
         }
         auto inputFTableMorsel = sharedState->inputFTableSharedState->getMorsel(1 /* morselSize */);
