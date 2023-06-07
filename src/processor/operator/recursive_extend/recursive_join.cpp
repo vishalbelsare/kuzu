@@ -43,7 +43,12 @@ bool BaseRecursiveJoin::getNextTuplesInternal(ExecutionContext* context) {
         }
         sharedState->inputFTableSharedState->getTable()->scan(vectorsToScan,
             inputFTableMorsel->startTupleIdx, inputFTableMorsel->numTuples, colIndicesToScan);
-        bfsMorsel->resetState();
+        if(bfsMorsel) {
+            bfsMorsel->resetState();
+        } else {
+            bfsMorsel = std::make_unique<ShortestPathBFSMorsel>(
+                maxOffset, lowerBound, upperBound, sharedState->semiMask.get());
+        }
         auto duration = std::chrono::system_clock::now().time_since_epoch();
         bfsMorsel->startTimeInMillis =
             std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();

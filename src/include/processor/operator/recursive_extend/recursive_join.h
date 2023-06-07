@@ -102,6 +102,7 @@ private:
     void updateVisitedNodes(uint64_t multiplicity);
 
 protected:
+    common::offset_t maxOffset;
     uint8_t lowerBound;
     uint8_t upperBound;
     storage::NodeTable* nodeTable;
