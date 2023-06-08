@@ -5,6 +5,7 @@ FORCE_COLOR=
 NUM_THREADS=
 SANITIZER_FLAG=
 ROOT_DIR=$(CURDIR)
+BUILD_WASM=
 
 ifndef $(NUM_THREADS)
 	NUM_THREADS=1
@@ -43,51 +44,59 @@ define mkdirp
 endef
 endif
 
+ifeq ($(BUILD_WASM), 1)
+	CMAKE_CMD=emcmake cmake
+	CMAKE_BUILD_WASM=
+else
+	CMAKE_CMD=cmake
+	CMAKE_BUILD_WASM=
+endif
+	
 arrow:
 	$(call mkdirp,external/build) && cd external/build && \
-	cmake $(FORCE_COLOR) $(SANITIZER_FLAG) $(GENERATOR) -DCMAKE_BUILD_TYPE=Release .. && \
+	$(CMAKE_CMD) $(FORCE_COLOR) $(SANITIZER_FLAG) $(GENERATOR) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release .. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 
 release: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 
 debug: arrow
 	$(call mkdirp,build/debug) && cd build/debug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Debug ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Debug ../.. && \
 	cmake --build . --config Debug -- -j $(NUM_THREADS)
 
 all: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE -DBUILD_BENCHMARK=TRUE -DBUILD_NODEJS=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE -DBUILD_BENCHMARK=TRUE -DBUILD_NODEJS=TRUE ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 
 alldebug: arrow
 	$(call mkdirp,build/debug) && cd build/debug && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=TRUE -DBUILD_BENCHMARK=TRUE -DBUILD_NODEJS=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTS=TRUE -DBUILD_BENCHMARK=TRUE -DBUILD_NODEJS=TRUE ../.. && \
 	cmake --build . --config Debug -- -j $(NUM_THREADS)
 
 benchmark: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARK=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARK=TRUE ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 
 nodejs: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release -DBUILD_NODEJS=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release -DBUILD_NODEJS=TRUE ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 
 test: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 	cd $(ROOT_DIR)/build/release/test && \
 	ctest --output-on-failure
 
 lcov: arrow
 	$(call mkdirp,build/release) && cd build/release && \
-	cmake $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE -DBUILD_NODEJS=TRUE -DBUILD_LCOV=TRUE ../.. && \
+	$(CMAKE_CMD) $(GENERATOR) $(FORCE_COLOR) $(SANITIZER_FLAG) $(CMAKE_BUILD_WASM) -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE -DBUILD_NODEJS=TRUE -DBUILD_LCOV=TRUE ../.. && \
 	cmake --build . --config Release -- -j $(NUM_THREADS)
 	cd $(ROOT_DIR)/build/release/test && \
 	ctest --output-on-failure
