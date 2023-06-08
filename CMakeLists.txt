@@ -172,6 +172,7 @@ include_directories(third_party/concurrentqueue)
 
 add_subdirectory(third_party)
 add_subdirectory(src)
+add_subdirectory(examples/cpp)
 if (${BUILD_TESTS})
     add_subdirectory(test)
 elseif (${BUILD_BENCHMARK})
