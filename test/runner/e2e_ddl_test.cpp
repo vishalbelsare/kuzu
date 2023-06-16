@@ -936,5 +936,19 @@ TEST_F(TinySnbDDLTest, RenamePropertyRecovery) {
     renameProperty(TransactionTestType::RECOVERY);
 }
 
+class TEST1 : public DBTest {
+public:
+    std::string getInputDir() override {
+        return TestHelper::appendKuzuRootPath("dataset/demo-db/csv/");
+    }
+};
+
+TEST_F(TEST1, DSA) {
+    ASSERT_TRUE(conn->query("MATCH (u:User {name:'Adam'})\n"
+                            "MATCH (c:City {name:'Atherton'})\n"
+                            "CREATE (u)-[:LivesIn]-(c)")
+                    ->isSuccess());
+}
+
 } // namespace testing
 } // namespace kuzu
