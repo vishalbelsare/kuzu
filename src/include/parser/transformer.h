@@ -246,6 +246,8 @@ private:
 
     std::unique_ptr<Statement> transformCopyNPY(CypherParser::KU_CopyNPYContext& ctx);
 
+    std::unique_ptr<Statement> transformCall(CypherParser::KU_CallContext& ctx);
+
     std::vector<std::string> transformFilePaths(
         std::vector<antlr4::tree::TerminalNode*> stringLiteral);
 

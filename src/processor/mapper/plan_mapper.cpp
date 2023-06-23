@@ -3,6 +3,7 @@
 #include <set>
 
 #include "processor/mapper/expression_mapper.h"
+#include "processor/operator/call.h"
 #include "processor/operator/result_collector.h"
 
 using namespace kuzu::common;
@@ -142,6 +143,9 @@ std::unique_ptr<PhysicalOperator> PlanMapper::mapLogicalOperatorToPhysical(
     } break;
     case LogicalOperatorType::RENAME_PROPERTY: {
         physicalOperator = mapLogicalRenamePropertyToPhysical(logicalOperator.get());
+    } break;
+    case LogicalOperatorType::CALL: {
+        physicalOperator = mapLogicalCallToPhysical(logicalOperator.get());
     } break;
     default:
         throw common::NotImplementedException("PlanMapper::mapLogicalOperatorToPhysical()");

@@ -6,6 +6,7 @@
 #include "common/api.h"
 #include "common/constants.h"
 #include "kuzu_fwd.h"
+#include "main/db_config.h"
 
 namespace kuzu {
 namespace main {

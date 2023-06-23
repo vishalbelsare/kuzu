@@ -199,6 +199,32 @@ private:
     std::vector<std::unique_ptr<Value>> convertKUStructToVector(const uint8_t* kuStruct) const;
     std::vector<std::unique_ptr<Value>> convertKUUnionToVector(const uint8_t* kuUnion) const;
 
+    template<typename OP, typename RESULT>
+    RESULT castValue() {
+        RESULT result;
+        switch (dataType.getLogicalTypeID()) {
+        case LogicalTypeID::SERIAL:
+        case LogicalTypeID::INT64: {
+            OP::template operation<int64_t>(val.int64Val, result);
+        } break;
+        case LogicalTypeID::INT32: {
+            OP::template operation<int32_t>(val.int32Val, result);
+        } break;
+        case LogicalTypeID::INT16: {
+            OP::template operation<int16_t>(val.int16Val, result);
+        } break;
+        case LogicalTypeID::DOUBLE: {
+            OP::template operation<double_t>(val.doubleVal, result);
+        } break;
+        case LogicalTypeID::FLOAT: {
+            OP::template operation<float_t>(val.floatVal, result);
+        } break;
+        default:
+            throw NotImplementedException{"Value::castValue"};
+        }
+        return result;
+    }
+
 public:
     LogicalType dataType;
     bool isNull_;

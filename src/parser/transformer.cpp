@@ -2,6 +2,7 @@
 
 #include "common/copier_config/copier_config.h"
 #include "common/string_utils.h"
+#include "parser/call/call.h"
 #include "parser/copy.h"
 #include "parser/ddl/add_property.h"
 #include "parser/ddl/create_node_clause.h"
@@ -33,8 +34,10 @@ std::unique_ptr<Statement> Transformer::transform() {
         statement = transformDDL(*root.kU_DDL());
     } else if (root.kU_CopyNPY()) {
         statement = transformCopyNPY(*root.kU_CopyNPY());
-    } else {
+    } else if (root.kU_CopyCSV()) {
         statement = transformCopyCSV(*root.kU_CopyCSV());
+    } else {
+        statement = transformCall(*root.kU_Call());
     }
     if (root.oC_AnyCypherOption()) {
         auto cypherOption = root.oC_AnyCypherOption();
@@ -1065,6 +1068,12 @@ std::unique_ptr<Statement> Transformer::transformCopyNPY(CypherParser::KU_CopyNP
     auto parsingOptions = std::unordered_map<std::string, std::unique_ptr<ParsedExpression>>();
     return std::make_unique<Copy>(std::move(filePaths), std::move(tableName),
         std::move(parsingOptions), common::CopyDescription::FileType::NPY);
+}
+
+std::unique_ptr<Statement> Transformer::transformCall(CypherParser::KU_CallContext& ctx) {
+    auto optionName = transformSymbolicName(*ctx.oC_SymbolicName());
+    auto parameter = transformLiteral(*ctx.oC_Literal());
+    return std::make_unique<Call>(std::move(optionName), std::move(parameter));
 }
 
 std::vector<std::string> Transformer::transformFilePaths(

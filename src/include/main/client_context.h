@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 #include "common/api.h"
 #include "common/timer.h"
@@ -26,6 +27,8 @@ class ClientContext {
     friend class Connection;
     friend class testing::TinySnbDDLTest;
     friend class testing::TinySnbCopyCSVTransactionTest;
+    friend class ThreadsSetting;
+    friend class TimeoutSetting;
 
 public:
     explicit ClientContext();
@@ -36,7 +39,9 @@ public:
 
     bool isInterrupted() const { return activeQuery->interrupted; }
 
-    inline bool isTimeOut() { return activeQuery->timer.getElapsedTimeInMS() > timeoutInMS; }
+    inline bool isTimeOut() {
+        return isTimeOutEnabled() && activeQuery->timer.getElapsedTimeInMS() > timeoutInMS;
+    }
 
     inline bool isTimeOutEnabled() const { return timeoutInMS != 0; }
 

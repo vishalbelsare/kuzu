@@ -936,5 +936,11 @@ TEST_F(TinySnbDDLTest, RenamePropertyRecovery) {
     renameProperty(TransactionTestType::RECOVERY);
 }
 
+TEST_F(TinySnbDDLTest, sda) {
+    auto err = conn->query("CALL threads='abc'")->getErrorMessage();
+    auto threads = conn->getMaxNumThreadForExec();
+    auto b = 6;
+}
+
 } // namespace testing
 } // namespace kuzu
