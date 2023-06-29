@@ -5,6 +5,13 @@
 
 -CASE AggHash
 
+-LOG OneHopHashAggTest
+-STATEMENT MATCH (a:person)-[:knows]->(b:person) RETURN a, COUNT(*)
+-ENUMERATE
+---- 2
+1|8|245
+2|6|210
+
 -LOG SingleNodeAggTest
 -STATEMENT MATCH (a:person) RETURN a.age, MIN(a.ID), AVG(a.eyeSight), COUNT(*)
 ---- 7

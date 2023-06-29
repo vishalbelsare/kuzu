@@ -11,6 +11,7 @@ namespace kuzu {
 namespace binder {
 
 std::unique_ptr<BoundStatement> Binder::bind(const Statement& statement) {
+//    auto boundStatement =
     switch (statement.getStatementType()) {
     case StatementType::CREATE_NODE_TABLE: {
         return bindCreateNodeTableClause(statement);
