@@ -123,11 +123,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Build and test
+      - name: Ninja Build and test
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
           make test NUM_THREADS=18
+
+      - name: MSVC Build and test
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+          cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=TRUE -G "Visual Studio 17 2022" -B msvc-build
+          cmake --build msvc-build --config Release -j 18
+          ctest --output-on-failure -j 18 --test-dir test
 
       - name: Rust test
         shell: cmd

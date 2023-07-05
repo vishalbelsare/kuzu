@@ -4,6 +4,10 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 if(WIN32)
         set(ARROW_BUILD_TYPE ${CMAKE_BUILD_TYPE})
+        if (${CMAKE_GENERATOR} MATCHES "Visual Studio")
+                # For some reason, this directory isn't created when using the MSVC generator
+                file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/arrow/src/apache_arrow-build/release)
+        endif()
 else()
         set(ARROW_BUILD_TYPE Release)
 endif()

@@ -324,27 +324,17 @@ if (WIN32)
 endif()
 
 
-if ("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
-    if(MSVC)
-        target_compile_options(${ANTLR4_RUNTIME} PRIVATE
-            /W4 /Od
-        )
-    else()
-        target_compile_options(${ANTLR4_RUNTIME} PRIVATE
-            -g -Wall -O0
-        )
-    endif()
+if(MSVC)
+    target_compile_options(${ANTLR4_RUNTIME} PRIVATE
+        $<$<CONFIG:Debug>:/W4 /Od>
+        $<$<CONFIG:Release>:/O2>
+    )
 else()
-    if(MSVC)
-        target_compile_options(${ANTLR4_RUNTIME} PRIVATE
-            /O2
-        )
-    else()
-        target_compile_options(${ANTLR4_RUNTIME} PRIVATE
-            -w -O3
-        )
-        target_compile_options(${ANTLR4_RUNTIME} PUBLIC
-            -Wno-attributes
-        )
-    endif()
+    target_compile_options(${ANTLR4_RUNTIME} PRIVATE
+        $<$<CONFIG:Debug>:-g -Wall -O0>
+        $<$<CONFIG:Release>:-w -O3>
+    )
+    target_compile_options(${ANTLR4_RUNTIME} PUBLIC
+        $<$<CONFIG:Release>:-Wno-attributes>
+    )
 endif()
