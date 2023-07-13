@@ -5,13 +5,14 @@
 #include <mutex>
 #include <stack>
 
-#include "bm_file_handle.h"
 #include "common/constants.h"
 
 namespace kuzu {
 namespace storage {
 
 class MemoryAllocator;
+class BMFileHandle;
+class BufferManager;
 
 class MemoryBuffer {
 public:
