@@ -5,8 +5,8 @@
 #include <mutex>
 #include <stack>
 
+#include "bm_file_handle.h"
 #include "common/constants.h"
-#include "storage/buffer_manager/buffer_manager.h"
 
 namespace kuzu {
 namespace storage {
