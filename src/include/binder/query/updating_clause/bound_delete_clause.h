@@ -1,30 +1,10 @@
 #pragma once
 
-#include "binder/expression/rel_expression.h"
+#include "bound_delete_info.h"
 #include "bound_updating_clause.h"
 
 namespace kuzu {
 namespace binder {
-
-class BoundDeleteNode {
-public:
-    BoundDeleteNode(
-        std::shared_ptr<NodeExpression> node, std::shared_ptr<Expression> primaryKeyExpression)
-        : node{std::move(node)}, primaryKeyExpression{std::move(primaryKeyExpression)} {}
-
-    inline std::shared_ptr<NodeExpression> getNode() const { return node; }
-    inline std::shared_ptr<Expression> getPrimaryKeyExpression() const {
-        return primaryKeyExpression;
-    }
-
-    inline std::unique_ptr<BoundDeleteNode> copy() {
-        return std::make_unique<BoundDeleteNode>(node, primaryKeyExpression);
-    }
-
-private:
-    std::shared_ptr<NodeExpression> node;
-    std::shared_ptr<Expression> primaryKeyExpression;
-};
 
 class BoundDeleteClause : public BoundUpdatingClause {
 public:

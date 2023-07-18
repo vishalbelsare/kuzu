@@ -4,7 +4,9 @@
 #include "binder/query/updating_clause/bound_set_clause.h"
 #include "parser/query/updating_clause/create_clause.h"
 #include "parser/query/updating_clause/delete_clause.h"
+#include "parser/query/updating_clause/merge_clause.h"
 #include "parser/query/updating_clause/set_clause.h"
+#include "binder/query/updating_clause/bound_merge_clause.h"
 
 using namespace kuzu::common;
 using namespace kuzu::parser;
@@ -18,6 +20,9 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindUpdatingClause(
     case ClauseType::CREATE: {
         return bindCreateClause(updatingClause);
     }
+    case ClauseType::MERGE: {
+        return bindMergeClause(updatingClause);
+    }
     case ClauseType::SET: {
         return bindSetClause(updatingClause);
     }
@@ -25,50 +30,81 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindUpdatingClause(
         return bindDeleteClause(updatingClause);
     }
     default:
-        throw NotImplementedException("bindUpdatingClause().");
+        throw NotImplementedException("Binder::bindUpdatingClause");
     }
+}
+
+static expression_set populateScope(
+    const BinderScope& scope, const std::function<bool(const Expression& expression)>& check) {
+    expression_set result;
+    for (auto& expression : scope.getExpressions()) {
+        if (check(*expression)) {
+            result.insert(expression);
+        }
+    }
+    return result;
 }
 
 std::unique_ptr<BoundUpdatingClause> Binder::bindCreateClause(
     const UpdatingClause& updatingClause) {
     auto& createClause = (CreateClause&)updatingClause;
-    auto prevScope = scope->copy();
-    expression_set nodesScope;
-    expression_set relsScope;
-    for (auto& expression : scope->getExpressions()) {
-        if (ExpressionUtil::isNodeVariable(*expression)) {
-            nodesScope.insert(expression);
-        } else if (ExpressionUtil::isRelVariable(*expression)) {
-            relsScope.insert(expression);
-        }
-    }
+    auto nodesScope = populateScope(*scope, ExpressionUtil::isNodeVariable);
+    auto relsScope = populateScope(*scope, ExpressionUtil::isRelVariable);
     // bindGraphPattern will update scope.
     auto [queryGraphCollection, propertyCollection] =
-        bindGraphPattern(createClause.getPatternElements());
-    auto boundCreateClause = std::make_unique<BoundCreateClause>();
-    for (auto i = 0u; i < queryGraphCollection->getNumQueryGraphs(); ++i) {
-        auto queryGraph = queryGraphCollection->getQueryGraph(i);
+        bindGraphPattern(createClause.getPatternElementsRef());
+    auto createNodeInfos = bindCreateNodeInfos(*queryGraphCollection, *propertyCollection, nodesScope);
+    auto createRelInfos = bindCreateRelInfos(*queryGraphCollection, *propertyCollection, relsScope);
+    return std::make_unique<BoundCreateClause>(std::move(createNodeInfos), std::move(createRelInfos));
+}
+
+std::unique_ptr<BoundUpdatingClause> Binder::bindMergeClause(
+    const parser::UpdatingClause& updatingClause) {
+    auto& mergeClause = (MergeClause&)updatingClause;
+    auto nodesScope = populateScope(*scope, ExpressionUtil::isNodeVariable);
+    auto relsScope = populateScope(*scope, ExpressionUtil::isRelVariable);
+    // bindGraphPattern will update scope.
+    auto [queryGraphCollection, propertyCollection] =
+        bindGraphPattern(mergeClause.getPatternElementsRef());
+}
+
+std::vector<std::unique_ptr<BoundCreateNodeInfo>> Binder::bindCreateNodeInfos(
+    const QueryGraphCollection& queryGraphCollection,
+    const PropertyKeyValCollection& keyValCollection, const expression_set& nodesScope_) {
+    auto nodesScope = nodesScope_;
+    std::vector<std::unique_ptr<BoundCreateNodeInfo>> result;
+    for (auto i = 0u; i < queryGraphCollection.getNumQueryGraphs(); ++i) {
+        auto queryGraph = queryGraphCollection.getQueryGraph(i);
         for (auto j = 0u; j < queryGraph->getNumQueryNodes(); ++j) {
             auto node = queryGraph->getQueryNode(j);
             if (nodesScope.contains(node)) {
                 continue;
             }
             nodesScope.insert(node);
-            boundCreateClause->addCreateNode(bindCreateNode(node, *propertyCollection));
+            result.push_back(bindCreateNode(node, keyValCollection));
         }
+    }
+    return result;
+}
+
+std::vector<std::unique_ptr<BoundCreateRelInfo>> Binder::bindCreateRelInfos(const QueryGraphCollection& queryGraphCollection, const PropertyKeyValCollection& keyValCollection, const expression_set& relsScope_) {
+    auto relsScope = relsScope_;
+    std::vector<std::unique_ptr<BoundCreateRelInfo>> result;
+    for (auto i = 0u; i < queryGraphCollection.getNumQueryGraphs(); ++i) {
+        auto queryGraph = queryGraphCollection.getQueryGraph(i);
         for (auto j = 0u; j < queryGraph->getNumQueryRels(); ++j) {
             auto rel = queryGraph->getQueryRel(j);
             if (relsScope.contains(rel)) {
                 continue;
             }
             relsScope.insert(rel);
-            boundCreateClause->addCreateRel(bindCreateRel(rel, *propertyCollection));
+            result.push_back(bindCreateRel(rel, keyValCollection));
         }
     }
-    return boundCreateClause;
+    return result;
 }
 
-std::unique_ptr<BoundCreateNode> Binder::bindCreateNode(
+std::unique_ptr<BoundCreateNodeInfo> Binder::bindCreateNode(
     std::shared_ptr<NodeExpression> node, const PropertyKeyValCollection& collection) {
     if (node->isMultiLabeled()) {
         throw BinderException(
@@ -102,7 +138,7 @@ std::unique_ptr<BoundCreateNode> Binder::bindCreateNode(
         throw BinderException("Create node " + node->toString() + " expects primary key " +
                               primaryKey.name + " as input.");
     }
-    return std::make_unique<BoundCreateNode>(
+    return std::make_unique<BoundCreateNodeInfo>(
         std::move(node), std::move(primaryKeyExpression), std::move(setItems));
 }
 

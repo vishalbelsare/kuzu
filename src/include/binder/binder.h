@@ -13,11 +13,11 @@ class ClientContext;
 
 namespace binder {
 
-class BoundCreateNode;
-class BoundCreateRel;
-class BoundSetNodeProperty;
-class BoundSetRelProperty;
-class BoundDeleteNode;
+class BoundCreateNodeInfo;
+class BoundCreateRelInfo;
+class BoundSetNodePropertyInfo;
+class BoundSetRelPropertyInfo;
+class BoundDeleteNodeInfo;
 
 // BinderScope keeps track of expressions in scope and their aliases. We maintain the order of
 // expressions in
@@ -134,12 +134,20 @@ private:
         const parser::UpdatingClause& updatingClause);
     std::unique_ptr<BoundUpdatingClause> bindCreateClause(
         const parser::UpdatingClause& updatingClause);
+    std::unique_ptr<BoundUpdatingClause> bindMergeClause(
+        const parser::UpdatingClause& updatingClause);
     std::unique_ptr<BoundUpdatingClause> bindSetClause(
         const parser::UpdatingClause& updatingClause);
     std::unique_ptr<BoundUpdatingClause> bindDeleteClause(
         const parser::UpdatingClause& updatingClause);
 
-    std::unique_ptr<BoundCreateNode> bindCreateNode(
+    std::vector<std::unique_ptr<BoundCreateNodeInfo>> bindCreateNodeInfos(
+        const QueryGraphCollection& queryGraphCollection,
+        const PropertyKeyValCollection& keyValCollection, const expression_set& nodesScope_);
+    std::vector<std::unique_ptr<BoundCreateRelInfo>> bindCreateRelInfos(const QueryGraphCollection& queryGraphCollection,
+        const PropertyKeyValCollection& keyValCollection, const expression_set& relsScope_);
+
+    std::unique_ptr<BoundCreateNodeInfo> bindCreateNode(
         std::shared_ptr<NodeExpression> node, const PropertyKeyValCollection& collection);
     std::unique_ptr<BoundCreateRel> bindCreateRel(
         std::shared_ptr<RelExpression> rel, const PropertyKeyValCollection& collection);
