@@ -165,15 +165,15 @@ void ColumnChunk::templateCopyArrowArray<uint8_t*>(
                 continue;
             }
             auto posInList = fixedSizedListArray->offset() + i;
-            memcpy(buffer.get() + (posInChunk * numBytesPerValue),
-                valuesInList + (posInList * numBytesPerValue), numBytesPerValue);
+            memcpy(buffer.get() + getOffsetInBuffer(posInChunk),
+                valuesInList + posInList * numBytesPerValue, numBytesPerValue);
         }
     } else {
         for (auto i = 0u; i < numValuesToAppend; i++) {
             auto posInChunk = startPosInChunk + i;
             auto posInList = fixedSizedListArray->offset() + i;
-            memcpy(buffer.get() + (posInChunk * numBytesPerValue),
-                valuesInList + (posInList * numBytesPerValue), numBytesPerValue);
+            memcpy(buffer.get() + getOffsetInBuffer(posInChunk),
+                valuesInList + posInList * numBytesPerValue, numBytesPerValue);
         }
     }
 }
@@ -241,6 +241,21 @@ uint32_t ColumnChunk::getDataTypeSizeInChunk(common::LogicalType& dataType) {
     }
 }
 
+void FixedListColumnChunk::appendColumnChunk(kuzu::storage::ColumnChunk* other,
+    common::offset_t startPosInOtherChunk, common::offset_t startPosInChunk,
+    uint32_t numValuesToAppend) {
+    auto otherChunk = (FixedListColumnChunk*)other;
+    if (nullChunk) {
+        nullChunk->appendColumnChunk(
+            otherChunk->nullChunk.get(), startPosInOtherChunk, startPosInChunk, numValuesToAppend);
+    }
+    for (auto i = 0u; i < numValuesToAppend; i++) {
+        memcpy(buffer.get() + getOffsetInBuffer(startPosInChunk + i),
+            otherChunk->buffer.get() + getOffsetInBuffer(startPosInOtherChunk + i),
+            numBytesPerValue);
+    }
+}
+
 std::unique_ptr<ColumnChunk> ColumnChunkFactory::createColumnChunk(
     const LogicalType& dataType, CopyDescription* copyDescription) {
     switch (dataType.getLogicalTypeID()) {
@@ -252,9 +267,11 @@ std::unique_ptr<ColumnChunk> ColumnChunkFactory::createColumnChunk(
     case LogicalTypeID::FLOAT:
     case LogicalTypeID::DATE:
     case LogicalTypeID::TIMESTAMP:
-    case LogicalTypeID::INTERVAL:
-    case LogicalTypeID::FIXED_LIST: {
+    case LogicalTypeID::INTERVAL: {
         return std::make_unique<ColumnChunk>(dataType, copyDescription);
+    }
+    case LogicalTypeID::FIXED_LIST: {
+        return std::make_unique<FixedListColumnChunk>(dataType);
     }
     case LogicalTypeID::BLOB:
     case LogicalTypeID::STRING:
@@ -307,6 +324,16 @@ void ColumnChunk::setValueFromString<timestamp_t>(
     const char* value, uint64_t length, uint64_t pos) {
     auto val = Timestamp::FromCString(value, length);
     setValue(val, pos);
+}
+
+common::offset_t ColumnChunk::getOffsetInBuffer(common::offset_t pos) {
+    auto numElementsInAPage =
+        PageUtils::getNumElementsInAPage(numBytesPerValue, false /* hasNull */);
+    auto posCursor = PageUtils::getPageByteCursorForPos(pos, numElementsInAPage, numBytesPerValue);
+    auto offsetInBuffer =
+        posCursor.pageIdx * common::BufferPoolConstants::PAGE_4KB_SIZE + posCursor.offsetInPage;
+    assert(offsetInBuffer + numBytesPerValue <= numBytes);
+    return offsetInBuffer;
 }
 
 } // namespace storage

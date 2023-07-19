@@ -86,6 +86,8 @@ protected:
         return getNumPagesForBytes(numBytes);
     }
 
+    common::offset_t getOffsetInBuffer(common::offset_t pos);
+
 protected:
     common::LogicalType dataType;
     uint32_t numBytesPerValue;
@@ -108,6 +110,16 @@ public:
 
     inline bool isNull(common::offset_t pos) const { return getValue<bool>(pos); }
     inline void setNull(common::offset_t pos, bool isNull) { ((bool*)buffer.get())[pos] = isNull; }
+};
+
+class FixedListColumnChunk : public ColumnChunk {
+public:
+    FixedListColumnChunk(common::LogicalType dataType)
+        : ColumnChunk(std::move(dataType), nullptr /* copyDescription */, true /* hasNullChunk */) {
+    }
+
+    void appendColumnChunk(ColumnChunk* other, common::offset_t startPosInOtherChunk,
+        common::offset_t startPosInChunk, uint32_t numValuesToAppend) final;
 };
 
 struct ColumnChunkFactory {
