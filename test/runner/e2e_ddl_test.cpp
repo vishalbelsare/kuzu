@@ -497,7 +497,7 @@ public:
 };
 
 TEST_F(TinySnbDDLTest, MinMaxTest) {
-    printf("%s", conn->query("match (m:movies) return min(p.note)")->toString().c_str());
+    printf("%s", conn->query("match (m:movies) return min(m.note)")->toString().c_str());
 }
 
 } // namespace testing
