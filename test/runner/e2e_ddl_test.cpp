@@ -498,6 +498,8 @@ public:
 
 TEST_F(TinySnbDDLTest, MinMaxTest) {
     printf("%s", conn->query("MATCH (a:person) RETURN a.age, MIN(a.ID), AVG(a.eyeSight), COUNT(*)")->toString().c_str());
+    printf("%s", conn->query("MATCH (m:movies) RETURN m.length <> 298, MIN(m.content)")->toString().c_str());
+    printf("%s", conn->query("MATCH (m:movies) RETURN m.length <> 126, MAX(m.content)")->toString().c_str());
 }
 
 } // namespace testing
