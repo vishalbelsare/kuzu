@@ -141,7 +141,7 @@ void AggregateHashTable::initializeFT(
     for (auto& dataType : keyDataTypes) {
         auto size = LogicalTypeUtils::getRowLayoutSize(dataType);
         tableSchema->appendColumn(std::make_unique<ColumnSchema>(isUnflat, dataChunkPos, size));
-        hasStrCol = hasStrCol || dataType.getLogicalTypeID() == LogicalTypeID::STRING;
+        hasStrCol = hasStrCol || dataType.getPhysicalType() == PhysicalTypeID::STRING;
         getCompareEntryWithKeysFunc(dataType.getPhysicalType(), compareFuncs[colIdx]);
         numBytesForKeys += size;
         colIdx++;
@@ -149,7 +149,7 @@ void AggregateHashTable::initializeFT(
     for (auto& dataType : dependentKeyDataTypes) {
         auto size = LogicalTypeUtils::getRowLayoutSize(dataType);
         tableSchema->appendColumn(std::make_unique<ColumnSchema>(isUnflat, dataChunkPos, size));
-        hasStrCol = hasStrCol || dataType.getLogicalTypeID() == LogicalTypeID::STRING;
+        hasStrCol = hasStrCol || dataType.getPhysicalType() == PhysicalTypeID::STRING;
         numBytesForDependentKeys += size;
         colIdx++;
     }
