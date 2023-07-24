@@ -151,7 +151,7 @@ void QueryPlanner::planInQueryCall(
         if (!plan->isEmpty()) {
             auto inQueryCallPlan = std::make_shared<LogicalPlan>();
             appendInQueryCall(*boundInQueryCall, *inQueryCallPlan);
-            joinOrderEnumerator.appendCrossProduct(*plan, *inQueryCallPlan);
+            joinOrderEnumerator.appendCrossProduct(common::AccumulateType::REGULAR, *plan, *inQueryCallPlan);
         } else {
             appendInQueryCall(*boundInQueryCall, *plan);
         }
@@ -195,7 +195,7 @@ void QueryPlanner::planOptionalMatch(const QueryGraphCollection& queryGraphColle
     auto correlatedExpressions =
         getCorrelatedExpressions(queryGraphCollection, predicates, leftPlan.getSchema());
     if (correlatedExpressions.empty()) {
-        throw NotImplementedException("Optional match is disconnected with previous MATCH clause.");
+
     }
     if (ExpressionUtil::allExpressionsHaveDataType(
             correlatedExpressions, LogicalTypeID::INTERNAL_ID)) {
@@ -230,7 +230,7 @@ void QueryPlanner::planRegularMatch(const QueryGraphCollection& queryGraphCollec
     // planning an un-nest subquery.
     auto rightPlan = planJoinsInNewContext(joinNodeIDs, queryGraphCollection, predicatesToPushDown);
     if (joinNodeIDs.empty()) {
-        joinOrderEnumerator.planCrossProduct(leftPlan, *rightPlan);
+        joinOrderEnumerator.appendCrossProduct(common::AccumulateType::REGULAR, leftPlan, *rightPlan);
     } else {
         joinOrderEnumerator.planInnerHashJoin(joinNodeIDs, leftPlan, *rightPlan);
     }
@@ -241,9 +241,9 @@ void QueryPlanner::planRegularMatch(const QueryGraphCollection& queryGraphCollec
 
 void QueryPlanner::planExistsSubquery(
     std::shared_ptr<Expression> expression, LogicalPlan& outerPlan) {
-
     assert(expression->expressionType == EXISTENTIAL_SUBQUERY);
     auto subquery = static_pointer_cast<ExistentialSubqueryExpression>(expression);
+    auto predicates = subquery->getPredicatesSplitOnAnd();
     auto correlatedExpressions = outerPlan.getSchema()->getSubExpressionsInScope(subquery);
     if (correlatedExpressions.empty()) {
         throw NotImplementedException("Subquery is disconnected with outer query.");
@@ -252,7 +252,6 @@ void QueryPlanner::planExistsSubquery(
             correlatedExpressions, LogicalTypeID::INTERNAL_ID)) {
         auto joinNodeIDs = getJoinNodeIDs(correlatedExpressions);
         // Unnest as mark join. See planOptionalMatch for unnesting logic.
-        auto predicates = subquery->getPredicatesSplitOnAnd();
         auto innerPlan =
             planJoinsInNewContext(joinNodeIDs, *subquery->getQueryGraphCollection(), predicates);
         joinOrderEnumerator.planMarkJoin(joinNodeIDs, expression, outerPlan, *innerPlan);

@@ -2,7 +2,6 @@
 
 #include "binder/expression/expression_visitor.h"
 #include "planner/join_order/cost_model.h"
-#include "planner/logical_plan/logical_operator/logical_cross_product.h"
 #include "planner/logical_plan/logical_operator/logical_scan_node.h"
 #include "planner/query_planner.h"
 
@@ -468,17 +467,6 @@ void JoinOrderEnumerator::planJoin(const expression_vector& joinNodeIDs, JoinTyp
     }
 }
 
-void JoinOrderEnumerator::appendCrossProduct(LogicalPlan& probePlan, LogicalPlan& buildPlan) {
-    auto crossProduct =
-        make_shared<LogicalCrossProduct>(probePlan.getLastOperator(), buildPlan.getLastOperator());
-    crossProduct->computeFactorizedSchema();
-    // update cost
-    probePlan.setCost(probePlan.getCardinality() + buildPlan.getCardinality());
-    // update cardinality
-    probePlan.setCardinality(
-        queryPlanner->cardinalityEstimator->estimateCrossProduct(probePlan, buildPlan));
-    probePlan.setLastOperator(std::move(crossProduct));
-}
 
 expression_vector JoinOrderEnumerator::getNewlyMatchedExpressions(
     const std::vector<SubqueryGraph>& prevSubgraphs, const SubqueryGraph& newSubgraph,
