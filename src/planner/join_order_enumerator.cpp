@@ -58,7 +58,7 @@ std::vector<std::unique_ptr<LogicalPlan>> JoinOrderEnumerator::planCrossProduct(
         for (auto& rightPlan : rightPlans) {
             auto leftPlanCopy = leftPlan->shallowCopy();
             auto rightPlanCopy = rightPlan->shallowCopy();
-            appendCrossProduct(*leftPlanCopy, *rightPlanCopy);
+            appendCrossProduct(common::AccumulateType::REGULAR, *leftPlanCopy, *rightPlanCopy);
             result.push_back(std::move(leftPlanCopy));
         }
     }
@@ -466,7 +466,6 @@ void JoinOrderEnumerator::planJoin(const expression_vector& joinNodeIDs, JoinTyp
         assert(false);
     }
 }
-
 
 expression_vector JoinOrderEnumerator::getNewlyMatchedExpressions(
     const std::vector<SubqueryGraph>& prevSubgraphs, const SubqueryGraph& newSubgraph,

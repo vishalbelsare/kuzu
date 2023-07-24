@@ -46,7 +46,8 @@ public:
         LogicalPlan& probePlan, LogicalPlan& buildPlan) {
         planJoin(joinNodeIDs, common::JoinType::LEFT, nullptr /* mark */, probePlan, buildPlan);
     }
-    void appendCrossProduct(common::AccumulateType accumulateType, LogicalPlan& probePlan, LogicalPlan& buildPlan);
+    void appendCrossProduct(
+        common::AccumulateType accumulateType, LogicalPlan& probePlan, LogicalPlan& buildPlan);
 
 private:
     std::vector<std::unique_ptr<LogicalPlan>> planCrossProduct(

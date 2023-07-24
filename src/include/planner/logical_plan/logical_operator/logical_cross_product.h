@@ -1,7 +1,7 @@
 #pragma once
 
-#include "common/join_type.h"
 #include "base_logical_operator.h"
+#include "common/join_type.h"
 #include "sink_util.h"
 
 namespace kuzu {
@@ -9,10 +9,11 @@ namespace planner {
 
 class LogicalCrossProduct : public LogicalOperator {
 public:
-    LogicalCrossProduct(common::AccumulateType accumulateType, std::shared_ptr<LogicalOperator> probeChild,
-        std::shared_ptr<LogicalOperator> buildChild)
+    LogicalCrossProduct(common::AccumulateType accumulateType,
+        std::shared_ptr<LogicalOperator> probeChild, std::shared_ptr<LogicalOperator> buildChild)
         : LogicalOperator{LogicalOperatorType::CROSS_PRODUCT, std::move(probeChild),
-              std::move(buildChild)}, accumulateType{accumulateType} {}
+              std::move(buildChild)},
+          accumulateType{accumulateType} {}
 
     void computeFactorizedSchema() override;
     void computeFlatSchema() override;
@@ -22,7 +23,8 @@ public:
     inline common::AccumulateType getAccumulateType() const { return accumulateType; }
 
     inline std::unique_ptr<LogicalOperator> copy() override {
-        return make_unique<LogicalCrossProduct>(accumulateType, children[0]->copy(), children[1]->copy());
+        return make_unique<LogicalCrossProduct>(
+            accumulateType, children[0]->copy(), children[1]->copy());
     }
 
 private:
