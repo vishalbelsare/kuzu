@@ -6,12 +6,12 @@ namespace kuzu {
 namespace planner {
 
 void QueryPlanner::appendDeleteNode(
-    const std::vector<std::unique_ptr<binder::BoundDeleteNode>>& deleteNodes, LogicalPlan& plan) {
+    const std::vector<binder::BoundDeleteNodeInfo*>& infos, LogicalPlan& plan) {
     std::vector<std::shared_ptr<NodeExpression>> nodes;
     expression_vector primaryKeys;
-    for (auto& deleteNode : deleteNodes) {
-        nodes.push_back(deleteNode->getNode());
-        primaryKeys.push_back(deleteNode->getPrimaryKeyExpression());
+    for (auto& info : infos) {
+        nodes.push_back(info->node);
+        primaryKeys.push_back(info->primaryKey);
     }
     auto deleteNode = std::make_shared<LogicalDeleteNode>(
         std::move(nodes), std::move(primaryKeys), plan.getLastOperator());

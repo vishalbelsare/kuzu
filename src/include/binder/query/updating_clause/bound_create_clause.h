@@ -14,15 +14,11 @@ public:
           createNodeInfos{std::move(createNodeInfos)}, createRelInfos{std::move(createRelInfos)} {}
     BoundCreateClause(const BoundCreateClause& other);
 
-    //    inline bool hasCreateNode() const { return !createNodes.empty(); }
-    //    inline const std::vector<std::unique_ptr<BoundCreateNode>>& getCreateNodes() const {
-    //        return createNodes;
-    //    }
-    //
-    //    inline bool hasCreateRel() const { return !createRels.empty(); }
-    //    inline const std::vector<std::unique_ptr<BoundCreateRel>>& getCreateRels() const {
-    //        return createRels;
-    //    }
+    inline bool hasNodeInfo() const { return !createNodeInfos.empty(); }
+    std::vector<BoundCreateNodeInfo*> getNodeInfos() const;
+
+    inline bool hasRelInfo() const { return !createRelInfos.empty(); }
+    std::vector<BoundCreateRelInfo*> getRelInfos() const;
 
     std::vector<expression_pair> getAllSetItems() const;
 

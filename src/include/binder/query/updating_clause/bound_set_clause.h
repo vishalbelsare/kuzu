@@ -11,8 +11,32 @@ public:
     BoundSetClause() : BoundUpdatingClause{common::ClauseType::SET} {}
     BoundSetClause(const BoundSetClause& other);
 
-    inline void addSetPropertyInfo(std::unique_ptr<BoundSetPropertyInfo> setPropertyInfo) {
-        setPropertyInfos.push_back(std::move(setPropertyInfo));
+    inline void addInfo(std::unique_ptr<BoundSetPropertyInfo> info) {
+        infos.push_back(std::move(info));
+    }
+    inline const std::vector<std::unique_ptr<BoundSetPropertyInfo>>& getInfosRef() {
+        return infos;
+    }
+
+    inline bool hasNodeInfo() const {
+        return hasInfo([](const BoundSetPropertyInfo& info) {
+            return info.setPropertyType == SetPropertyType::NODE;
+        });
+    }
+    std::vector<BoundSetPropertyInfo*> getNodeInfos() const {
+        return getInfos([](const BoundSetPropertyInfo& info) {
+            return info.setPropertyType == SetPropertyType::NODE;
+        });
+    }
+    inline bool hasRelInfo() const {
+        return hasInfo([](const BoundSetPropertyInfo& info) {
+            return info.setPropertyType == SetPropertyType::REL;
+        });
+    }
+    std::vector<BoundSetPropertyInfo*> getRelInfos() const {
+        return getInfos([](const BoundSetPropertyInfo& info) {
+            return info.setPropertyType == SetPropertyType::REL;
+        });
     }
 
     inline std::unique_ptr<BoundUpdatingClause> copy() final {
@@ -20,7 +44,12 @@ public:
     }
 
 private:
-    std::vector<std::unique_ptr<BoundSetPropertyInfo>> setPropertyInfos;
+    bool hasInfo(const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
+    std::vector<BoundSetPropertyInfo*> getInfos(
+        const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
+
+private:
+    std::vector<std::unique_ptr<BoundSetPropertyInfo>> infos;
 };
 
 } // namespace binder

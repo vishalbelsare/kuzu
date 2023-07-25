@@ -37,18 +37,15 @@ void PropertyCollector::visitUnwind(const BoundReadingClause& readingClause) {
 
 void PropertyCollector::visitSet(const BoundUpdatingClause& updatingClause) {
     auto& boundSetClause = (BoundSetClause&)updatingClause;
-    for (auto& setNodeProperty : boundSetClause.getSetNodeProperties()) {
-        collectPropertyExpressions(setNodeProperty->getSetItem().second);
-    }
-    for (auto& setRelProperty : boundSetClause.getSetRelProperties()) {
-        collectPropertyExpressions(setRelProperty->getSetItem().second);
+    for (auto& info : boundSetClause.getInfosRef()) {
+        collectPropertyExpressions(info->setItem.second);
     }
 }
 
 void PropertyCollector::visitDelete(const BoundUpdatingClause& updatingClause) {
     auto& boundDeleteClause = (BoundDeleteClause&)updatingClause;
-    for (auto& deleteNode : boundDeleteClause.getDeleteNodes()) {
-        properties.insert(deleteNode->getPrimaryKeyExpression());
+    for (auto& info : boundDeleteClause.getNodeInfos()) {
+        properties.insert(info->primaryKey);
     }
     for (auto& deleteRel : boundDeleteClause.getDeleteRels()) {
         properties.insert(deleteRel->getInternalIDProperty());
@@ -57,13 +54,13 @@ void PropertyCollector::visitDelete(const BoundUpdatingClause& updatingClause) {
 
 void PropertyCollector::visitCreate(const BoundUpdatingClause& updatingClause) {
     auto& boundCreateClause = (BoundCreateClause&)updatingClause;
-    for (auto& createNode : boundCreateClause.getCreateNodes()) {
-        for (auto& setItem : createNode->getSetItems()) {
+    for (auto& nodeInfo : boundCreateClause.getNodeInfos()) {
+        for (auto& setItem : nodeInfo->setItems) {
             collectPropertyExpressions(setItem.second);
         }
     }
-    for (auto& createRel : boundCreateClause.getCreateRels()) {
-        for (auto& setItem : createRel->getSetItems()) {
+    for (auto& relInfo : boundCreateClause.getRelInfos()) {
+        for (auto& setItem : relInfo->setItems) {
             collectPropertyExpressions(setItem.second);
         }
     }

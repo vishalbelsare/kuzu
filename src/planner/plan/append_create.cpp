@@ -9,16 +9,16 @@ namespace kuzu {
 namespace planner {
 
 void QueryPlanner::appendCreateNode(
-    const std::vector<std::unique_ptr<binder::BoundCreateNode>>& createNodes, LogicalPlan& plan) {
+    const std::vector<binder::BoundCreateNodeInfo*>& createInfos, LogicalPlan& plan) {
     std::vector<std::shared_ptr<NodeExpression>> nodes;
     expression_vector primaryKeys;
-    std::vector<std::unique_ptr<BoundSetNodeProperty>> setNodeProperties;
-    for (auto& createNode : createNodes) {
-        auto node = createNode->getNode();
-        nodes.push_back(node);
-        primaryKeys.push_back(createNode->getPrimaryKeyExpression());
-        for (auto& setItem : createNode->getSetItems()) {
-            setNodeProperties.push_back(std::make_unique<BoundSetNodeProperty>(node, setItem));
+    std::vector<std::unique_ptr<BoundSetPropertyInfo>> setInfos;
+    for (auto& createInfo : createInfos) {
+        nodes.push_back(createInfo->node);
+        primaryKeys.push_back(createInfo->primaryKey);
+        for (auto& setItem : createInfo->setItems) {
+            setInfos.push_back(std::make_unique<BoundSetPropertyInfo>(
+                SetPropertyType::NODE, createInfo->node, setItem));
         }
     }
     auto createNode = std::make_shared<LogicalCreateNode>(
@@ -27,16 +27,20 @@ void QueryPlanner::appendCreateNode(
     createNode->setChild(0, plan.getLastOperator());
     createNode->computeFactorizedSchema();
     plan.setLastOperator(createNode);
-    appendSetNodeProperty(setNodeProperties, plan);
+    std::vector<BoundSetPropertyInfo*> setInfoPtrs;
+    for (auto& setInfo : setInfos) {
+        setInfoPtrs.push_back(setInfo.get());
+    }
+    appendSetNodeProperty(setInfoPtrs, plan);
 }
 
 void QueryPlanner::appendCreateRel(
-    const std::vector<std::unique_ptr<binder::BoundCreateRel>>& createRels, LogicalPlan& plan) {
+    const std::vector<binder::BoundCreateRelInfo*>& createInfos, LogicalPlan& plan) {
     std::vector<std::shared_ptr<RelExpression>> rels;
     std::vector<std::vector<expression_pair>> setItemsPerRel;
-    for (auto& createRel : createRels) {
-        rels.push_back(createRel->getRel());
-        setItemsPerRel.push_back(createRel->getSetItems());
+    for (auto& info : createInfos) {
+        rels.push_back(info->rel);
+        setItemsPerRel.push_back(info->setItems);
     }
     auto createRel = std::make_shared<LogicalCreateRel>(
         std::move(rels), std::move(setItemsPerRel), plan.getLastOperator());

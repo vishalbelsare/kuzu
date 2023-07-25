@@ -13,5 +13,14 @@ BoundDeleteClause::BoundDeleteClause(const BoundDeleteClause& other)
     }
 }
 
+std::vector<BoundDeleteNodeInfo*> BoundDeleteClause::getNodeInfos() const {
+    std::vector<BoundDeleteNodeInfo*> result;
+    result.reserve(deleteNodeInfos.size());
+    for (auto& info : deleteNodeInfos) {
+        result.push_back(info.get());
+    }
+    return result;
+}
+
 } // namespace binder
 } // namespace kuzu

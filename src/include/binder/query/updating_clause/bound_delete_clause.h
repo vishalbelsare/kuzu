@@ -11,15 +11,12 @@ public:
     BoundDeleteClause() : BoundUpdatingClause{common::ClauseType::DELETE_} {};
     BoundDeleteClause(const BoundDeleteClause& other);
 
-    inline void addDeleteNode(std::unique_ptr<BoundDeleteNodeInfo> deleteNodeInfo) {
-        deleteNodeInfos.push_back(std::move(deleteNodeInfo));
+    inline void addNodeInfo(std::unique_ptr<BoundDeleteNodeInfo> info) {
+        deleteNodeInfos.push_back(std::move(info));
     }
-    //    inline bool hasDeleteNode() const { return !deleteNodes.empty(); }
-    //    inline uint32_t getNumDeleteNodes() const { return deleteNodes.size(); }
-    //    inline BoundDeleteNode* getDeleteNode(uint32_t idx) const { return deleteNodes[idx].get();
-    //    } inline const std::vector<std::unique_ptr<BoundDeleteNode>>& getDeleteNodes() const {
-    //        return deleteNodes;
-    //    }
+    inline bool hasNodeInfo() const { return !deleteNodeInfos.empty(); }
+    std::vector<BoundDeleteNodeInfo*> getNodeInfos() const;
+
 
     inline void addDeleteRel(std::shared_ptr<RelExpression> deleteRel) {
         deleteRels.push_back(std::move(deleteRel));

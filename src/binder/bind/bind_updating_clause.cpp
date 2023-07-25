@@ -195,7 +195,7 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindSetClause(const UpdatingClause&
     auto& setClause = (SetClause&)updatingClause;
     auto boundSetClause = std::make_unique<BoundSetClause>();
     for (auto i = 0u; i < setClause.getNumSetItems(); ++i) {
-        boundSetClause->addSetPropertyInfo(bindSetPropertyInfo(setClause.getSetItem(i)));
+        boundSetClause->addInfo(bindSetPropertyInfo(setClause.getSetItem(i)));
     }
     return boundSetClause;
 }
@@ -254,7 +254,7 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindDeleteClause(
         case LogicalTypeID::NODE: {
             auto deleteNodeInfo =
                 bindDeleteNodeInfo(static_pointer_cast<NodeExpression>(nodeOrRel));
-            boundDeleteClause->addDeleteNode(std::move(deleteNodeInfo));
+            boundDeleteClause->addNodeInfo(std::move(deleteNodeInfo));
         } break;
         case LogicalTypeID::REL: {
             auto deleteRel = bindDeleteRel(static_pointer_cast<RelExpression>(nodeOrRel));
