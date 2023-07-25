@@ -17,7 +17,6 @@ public:
     inline bool hasNodeInfo() const { return !deleteNodeInfos.empty(); }
     std::vector<BoundDeleteNodeInfo*> getNodeInfos() const;
 
-
     inline void addDeleteRel(std::shared_ptr<RelExpression> deleteRel) {
         deleteRels.push_back(std::move(deleteRel));
     }

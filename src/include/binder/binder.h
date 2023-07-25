@@ -13,8 +13,7 @@ class ClientContext;
 
 namespace binder {
 
-class BoundCreateNodeInfo;
-class BoundCreateRelInfo;
+class BoundCreateInfo;
 class BoundSetPropertyInfo;
 class BoundDeleteNodeInfo;
 
@@ -140,16 +139,12 @@ private:
     std::unique_ptr<BoundUpdatingClause> bindDeleteClause(
         const parser::UpdatingClause& updatingClause);
 
-    std::vector<std::unique_ptr<BoundCreateNodeInfo>> bindCreateNodeInfos(
+    std::vector<std::unique_ptr<BoundCreateInfo>> bindCreateInfos(
         const QueryGraphCollection& queryGraphCollection,
-        const PropertyKeyValCollection& keyValCollection, const expression_set& nodesScope_);
-    std::vector<std::unique_ptr<BoundCreateRelInfo>> bindCreateRelInfos(
-        const QueryGraphCollection& queryGraphCollection,
-        const PropertyKeyValCollection& keyValCollection, const expression_set& relsScope_);
-
-    std::unique_ptr<BoundCreateNodeInfo> bindCreateNodeInfo(
+        const PropertyKeyValCollection& keyValCollection, const expression_set& nodeRelScope_);
+    std::unique_ptr<BoundCreateInfo> bindCreateNodeInfo(
         std::shared_ptr<NodeExpression> node, const PropertyKeyValCollection& collection);
-    std::unique_ptr<BoundCreateRelInfo> bindCreateRelInfo(
+    std::unique_ptr<BoundCreateInfo> bindCreateRelInfo(
         std::shared_ptr<RelExpression> rel, const PropertyKeyValCollection& collection);
     std::unique_ptr<BoundSetPropertyInfo> bindSetPropertyInfo(
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);

@@ -54,13 +54,8 @@ void PropertyCollector::visitDelete(const BoundUpdatingClause& updatingClause) {
 
 void PropertyCollector::visitCreate(const BoundUpdatingClause& updatingClause) {
     auto& boundCreateClause = (BoundCreateClause&)updatingClause;
-    for (auto& nodeInfo : boundCreateClause.getNodeInfos()) {
-        for (auto& setItem : nodeInfo->setItems) {
-            collectPropertyExpressions(setItem.second);
-        }
-    }
-    for (auto& relInfo : boundCreateClause.getRelInfos()) {
-        for (auto& setItem : relInfo->setItems) {
+    for (auto& info : boundCreateClause.getInfosRef()) {
+        for (auto& setItem : info->setItems) {
             collectPropertyExpressions(setItem.second);
         }
     }

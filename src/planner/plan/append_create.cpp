@@ -9,16 +9,18 @@ namespace kuzu {
 namespace planner {
 
 void QueryPlanner::appendCreateNode(
-    const std::vector<binder::BoundCreateNodeInfo*>& createInfos, LogicalPlan& plan) {
+    const std::vector<binder::BoundCreateInfo*>& createInfos, LogicalPlan& plan) {
     std::vector<std::shared_ptr<NodeExpression>> nodes;
     expression_vector primaryKeys;
     std::vector<std::unique_ptr<BoundSetPropertyInfo>> setInfos;
     for (auto& createInfo : createInfos) {
-        nodes.push_back(createInfo->node);
-        primaryKeys.push_back(createInfo->primaryKey);
+        auto node = std::static_pointer_cast<NodeExpression>(createInfo->nodeOrRel);
+        auto extraInfo = (ExtraCreateNodeInfo*)createInfo->extraInfo.get();
+        nodes.push_back(node);
+        primaryKeys.push_back(extraInfo->primaryKey);
         for (auto& setItem : createInfo->setItems) {
-            setInfos.push_back(std::make_unique<BoundSetPropertyInfo>(
-                SetPropertyType::NODE, createInfo->node, setItem));
+            setInfos.push_back(
+                std::make_unique<BoundSetPropertyInfo>(UpdateTableType::NODE, node, setItem));
         }
     }
     auto createNode = std::make_shared<LogicalCreateNode>(
@@ -35,11 +37,12 @@ void QueryPlanner::appendCreateNode(
 }
 
 void QueryPlanner::appendCreateRel(
-    const std::vector<binder::BoundCreateRelInfo*>& createInfos, LogicalPlan& plan) {
+    const std::vector<binder::BoundCreateInfo*>& createInfos, LogicalPlan& plan) {
     std::vector<std::shared_ptr<RelExpression>> rels;
     std::vector<std::vector<expression_pair>> setItemsPerRel;
     for (auto& info : createInfos) {
-        rels.push_back(info->rel);
+        auto rel = std::static_pointer_cast<RelExpression>(info->nodeOrRel);
+        rels.push_back(rel);
         setItemsPerRel.push_back(info->setItems);
     }
     auto createRel = std::make_shared<LogicalCreateRel>(

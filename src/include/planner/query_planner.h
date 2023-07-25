@@ -9,8 +9,7 @@
 
 namespace kuzu {
 namespace binder {
-class BoundCreateNodeInfo;
-class BoundCreateRelInfo;
+class BoundCreateInfo;
 class BoundSetPropertyInfo;
 class BoundDeleteNodeInfo;
 } // namespace binder
@@ -97,15 +96,15 @@ private:
 
     // Append updating operators
     void appendCreateNode(
-        const std::vector<binder::BoundCreateNodeInfo*>& createInfos, LogicalPlan& plan);
+        const std::vector<binder::BoundCreateInfo*>& createInfos, LogicalPlan& plan);
     void appendCreateRel(
-        const std::vector<binder::BoundCreateRelInfo*>& createInfos, LogicalPlan& plan);
+        const std::vector<binder::BoundCreateInfo*>& createInfos, LogicalPlan& plan);
     void appendSetNodeProperty(
         const std::vector<binder::BoundSetPropertyInfo*>& infos, LogicalPlan& plan);
     void appendSetRelProperty(
         const std::vector<binder::BoundSetPropertyInfo*>& infos, LogicalPlan& plan);
-    void appendDeleteNode(const std::vector<binder::BoundDeleteNodeInfo*>& infos,
-        LogicalPlan& plan);
+    void appendDeleteNode(
+        const std::vector<binder::BoundDeleteNodeInfo*>& infos, LogicalPlan& plan);
     void appendDeleteRel(
         const std::vector<std::shared_ptr<binder::RelExpression>>& deleteRels, LogicalPlan& plan);
 

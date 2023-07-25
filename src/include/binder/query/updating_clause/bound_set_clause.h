@@ -14,28 +14,26 @@ public:
     inline void addInfo(std::unique_ptr<BoundSetPropertyInfo> info) {
         infos.push_back(std::move(info));
     }
-    inline const std::vector<std::unique_ptr<BoundSetPropertyInfo>>& getInfosRef() {
-        return infos;
-    }
+    inline const std::vector<std::unique_ptr<BoundSetPropertyInfo>>& getInfosRef() { return infos; }
 
     inline bool hasNodeInfo() const {
         return hasInfo([](const BoundSetPropertyInfo& info) {
-            return info.setPropertyType == SetPropertyType::NODE;
+            return info.updateTableType == UpdateTableType::NODE;
         });
     }
     std::vector<BoundSetPropertyInfo*> getNodeInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
-            return info.setPropertyType == SetPropertyType::NODE;
+            return info.updateTableType == UpdateTableType::NODE;
         });
     }
     inline bool hasRelInfo() const {
         return hasInfo([](const BoundSetPropertyInfo& info) {
-            return info.setPropertyType == SetPropertyType::REL;
+            return info.updateTableType == UpdateTableType::REL;
         });
     }
     std::vector<BoundSetPropertyInfo*> getRelInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
-            return info.setPropertyType == SetPropertyType::REL;
+            return info.updateTableType == UpdateTableType::REL;
         });
     }
 

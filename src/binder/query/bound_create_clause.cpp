@@ -5,42 +5,36 @@ namespace binder {
 
 BoundCreateClause::BoundCreateClause(const BoundCreateClause& other)
     : BoundUpdatingClause{common::ClauseType::CREATE} {
-    for (auto& createNodeInfo : other.createNodeInfos) {
-        createNodeInfos.push_back(createNodeInfo->copy());
+    for (auto& info : other.infos) {
+        infos.push_back(info->copy());
     }
-    for (auto& createRelInfo : other.createRelInfos) {
-        createRelInfos.push_back(createRelInfo->copy());
-    }
-}
-
-std::vector<BoundCreateNodeInfo*> BoundCreateClause::getNodeInfos() const {
-    std::vector<BoundCreateNodeInfo*> result;
-    result.reserve(createNodeInfos.size());
-    for (auto& info : createNodeInfos) {
-        result.push_back(info.get());
-    }
-    return result;
-}
-
-std::vector<BoundCreateRelInfo*> BoundCreateClause::getRelInfos() const {
-    std::vector<BoundCreateRelInfo*> result;
-    result.reserve(createRelInfos.size());
-    for (auto& info : createRelInfos) {
-        result.push_back(info.get());
-    }
-    return result;
 }
 
 std::vector<expression_pair> BoundCreateClause::getAllSetItems() const {
     std::vector<expression_pair> result;
-    for (auto& createNodeInfo : createNodeInfos) {
-        for (auto& setItem : createNodeInfo->setItems) {
+    for (auto& info : infos) {
+        for (auto& setItem : info->setItems) {
             result.push_back(setItem);
         }
     }
-    for (auto& createRelInfo : createRelInfos) {
-        for (auto& setItem : createRelInfo->setItems) {
-            result.push_back(setItem);
+    return result;
+}
+
+bool BoundCreateClause::hasInfo(const std::function<bool(const BoundCreateInfo&)>& check) const {
+    for (auto& info : infos) {
+        if (check(*info)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<BoundCreateInfo*> BoundCreateClause::getInfos(
+    const std::function<bool(const BoundCreateInfo&)>& check) const {
+    std::vector<BoundCreateInfo*> result;
+    for (auto& info : infos) {
+        if (check(*info)) {
+            result.push_back(info.get());
         }
     }
     return result;

@@ -8,17 +8,32 @@ namespace binder {
 
 class BoundCreateClause : public BoundUpdatingClause {
 public:
-    BoundCreateClause(std::vector<std::unique_ptr<BoundCreateNodeInfo>> createNodeInfos,
-        std::vector<std::unique_ptr<BoundCreateRelInfo>> createRelInfos)
-        : BoundUpdatingClause{common::ClauseType::CREATE},
-          createNodeInfos{std::move(createNodeInfos)}, createRelInfos{std::move(createRelInfos)} {}
+    explicit BoundCreateClause(std::vector<std::unique_ptr<BoundCreateInfo>> infos)
+        : BoundUpdatingClause{common::ClauseType::CREATE}, infos{std::move(infos)} {}
     BoundCreateClause(const BoundCreateClause& other);
 
-    inline bool hasNodeInfo() const { return !createNodeInfos.empty(); }
-    std::vector<BoundCreateNodeInfo*> getNodeInfos() const;
+    inline const std::vector<std::unique_ptr<BoundCreateInfo>>& getInfosRef() { return infos; }
 
-    inline bool hasRelInfo() const { return !createRelInfos.empty(); }
-    std::vector<BoundCreateRelInfo*> getRelInfos() const;
+    inline bool hasNodeInfo() const {
+        return hasInfo([](const BoundCreateInfo& info) {
+            return info.updateTableType == UpdateTableType::NODE;
+        });
+    }
+    std::vector<BoundCreateInfo*> getNodeInfos() const {
+        return getInfos([](const BoundCreateInfo& info) {
+            return info.updateTableType == UpdateTableType::NODE;
+        });
+    }
+    inline bool hasRelInfo() const {
+        return hasInfo([](const BoundCreateInfo& info) {
+            return info.updateTableType == UpdateTableType::REL;
+        });
+    }
+    std::vector<BoundCreateInfo*> getRelInfos() const {
+        return getInfos([](const BoundCreateInfo& info) {
+            return info.updateTableType == UpdateTableType::REL;
+        });
+    }
 
     std::vector<expression_pair> getAllSetItems() const;
 
@@ -27,8 +42,12 @@ public:
     }
 
 private:
-    std::vector<std::unique_ptr<BoundCreateNodeInfo>> createNodeInfos;
-    std::vector<std::unique_ptr<BoundCreateRelInfo>> createRelInfos;
+    bool hasInfo(const std::function<bool(const BoundCreateInfo& info)>& check) const;
+    std::vector<BoundCreateInfo*> getInfos(
+        const std::function<bool(const BoundCreateInfo& info)>& check) const;
+
+private:
+    std::vector<std::unique_ptr<BoundCreateInfo>> infos;
 };
 
 } // namespace binder

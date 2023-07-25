@@ -18,17 +18,6 @@ void QueryPlanner::planUpdatingClause(
 void QueryPlanner::planUpdatingClause(BoundUpdatingClause& updatingClause, LogicalPlan& plan) {
     switch (updatingClause.getClauseType()) {
     case ClauseType::CREATE: {
-        // TODO: refactor
-        auto& createClause = (BoundCreateClause&)updatingClause;
-        if (plan.isEmpty()) { // E.g. CREATE (a:Person {age:20})
-            expression_vector expressions;
-            for (auto& setItem : createClause.getAllSetItems()) {
-                expressions.push_back(setItem.second);
-            }
-            appendExpressionsScan(expressions, plan);
-        } else {
-            appendAccumulate(common::AccumulateType::REGULAR, plan);
-        }
         planCreateClause(updatingClause, plan);
         return;
     }
@@ -36,12 +25,10 @@ void QueryPlanner::planUpdatingClause(BoundUpdatingClause& updatingClause, Logic
         throw NotImplementedException("MERGE");
     }
     case ClauseType::SET: {
-        appendAccumulate(common::AccumulateType::REGULAR, plan);
         planSetClause(updatingClause, plan);
         return;
     }
     case ClauseType::DELETE_: {
-        appendAccumulate(common::AccumulateType::REGULAR, plan);
         planDeleteClause(updatingClause, plan);
         return;
     }
@@ -53,6 +40,15 @@ void QueryPlanner::planUpdatingClause(BoundUpdatingClause& updatingClause, Logic
 void QueryPlanner::planCreateClause(
     binder::BoundUpdatingClause& updatingClause, LogicalPlan& plan) {
     auto& createClause = (BoundCreateClause&)updatingClause;
+    if (plan.isEmpty()) { // E.g. CREATE (a:Person {age:20})
+        expression_vector expressions;
+        for (auto& setItem : createClause.getAllSetItems()) {
+            expressions.push_back(setItem.second);
+        }
+        appendExpressionsScan(expressions, plan);
+    } else {
+        appendAccumulate(common::AccumulateType::REGULAR, plan);
+    }
     if (createClause.hasNodeInfo()) {
         appendCreateNode(createClause.getNodeInfos(), plan);
     }
@@ -62,6 +58,7 @@ void QueryPlanner::planCreateClause(
 }
 
 void QueryPlanner::planSetClause(binder::BoundUpdatingClause& updatingClause, LogicalPlan& plan) {
+    appendAccumulate(common::AccumulateType::REGULAR, plan);
     auto& setClause = (BoundSetClause&)updatingClause;
     if (setClause.hasNodeInfo()) {
         appendSetNodeProperty(setClause.getNodeInfos(), plan);
@@ -73,6 +70,7 @@ void QueryPlanner::planSetClause(binder::BoundUpdatingClause& updatingClause, Lo
 
 void QueryPlanner::planDeleteClause(
     binder::BoundUpdatingClause& updatingClause, LogicalPlan& plan) {
+    appendAccumulate(common::AccumulateType::REGULAR, plan);
     auto& deleteClause = (BoundDeleteClause&)updatingClause;
     if (deleteClause.hasDeleteRel()) {
         appendDeleteRel(deleteClause.getDeleteRels(), plan);

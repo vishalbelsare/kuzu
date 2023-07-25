@@ -6,11 +6,8 @@ namespace binder {
 BoundMergeClause::BoundMergeClause(const BoundMergeClause& other)
     : BoundUpdatingClause{common::ClauseType::MERGE} {
     queryGraphCollection = other.queryGraphCollection->copy();
-    for (auto& createNodeInfo : other.createNodeInfos) {
-        createNodeInfos.push_back(createNodeInfo->copy());
-    }
-    for (auto& createRelInfo : other.createRelInfos) {
-        createRelInfos.push_back(createRelInfo->copy());
+    for (auto& createInfo : other.createInfos) {
+        createInfos.push_back(createInfo->copy());
     }
     for (auto& setPropertyInfo : other.onMatchSetPropertyInfos) {
         onMatchSetPropertyInfos.push_back(setPropertyInfo->copy());

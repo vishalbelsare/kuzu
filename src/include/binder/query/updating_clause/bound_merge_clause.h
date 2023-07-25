@@ -11,11 +11,10 @@ namespace binder {
 class BoundMergeClause : public BoundUpdatingClause {
 public:
     BoundMergeClause(std::unique_ptr<QueryGraphCollection> queryGraphCollection,
-        std::vector<std::unique_ptr<BoundCreateNodeInfo>> createNodeInfos,
-        std::vector<std::unique_ptr<BoundCreateRelInfo>> createRelInfos)
-        : BoundUpdatingClause{common::ClauseType::MERGE}, queryGraphCollection{std::move(
-                                                              queryGraphCollection)},
-          createNodeInfos{std::move(createNodeInfos)}, createRelInfos{std::move(createRelInfos)} {}
+        std::vector<std::unique_ptr<BoundCreateInfo>> createInfos)
+        : BoundUpdatingClause{common::ClauseType::MERGE},
+          queryGraphCollection{std::move(queryGraphCollection)}, createInfos{
+                                                                     std::move(createInfos)} {}
     BoundMergeClause(const BoundMergeClause& other);
 
     inline void addOnMatchSetPropertyInfo(std::unique_ptr<BoundSetPropertyInfo> setPropertyInfo) {
@@ -33,8 +32,7 @@ private:
     // Pattern to match.
     std::unique_ptr<QueryGraphCollection> queryGraphCollection;
     // Pattern to create on match failure.
-    std::vector<std::unique_ptr<BoundCreateNodeInfo>> createNodeInfos;
-    std::vector<std::unique_ptr<BoundCreateRelInfo>> createRelInfos;
+    std::vector<std::unique_ptr<BoundCreateInfo>> createInfos;
     // Update on match
     std::vector<std::unique_ptr<BoundSetPropertyInfo>> onMatchSetPropertyInfos;
     // Update on create

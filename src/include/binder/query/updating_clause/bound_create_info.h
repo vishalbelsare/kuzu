@@ -1,37 +1,48 @@
 #pragma once
 
 #include "binder/expression/rel_expression.h"
+#include "update_table_type.h"
 
 namespace kuzu {
 namespace binder {
 
-struct BoundCreateNodeInfo {
-    std::shared_ptr<NodeExpression> node;
+struct ExtraCreateInfo {
+    virtual ~ExtraCreateInfo() = default;
+    virtual std::unique_ptr<ExtraCreateInfo> copy() const = 0;
+};
+
+struct ExtraCreateNodeInfo : public ExtraCreateInfo {
     std::shared_ptr<Expression> primaryKey;
-    std::vector<expression_pair> setItems;
 
-    BoundCreateNodeInfo(std::shared_ptr<NodeExpression> node,
-        std::shared_ptr<Expression> primaryKey, std::vector<expression_pair> setItems)
-        : node{std::move(node)}, primaryKey{std::move(primaryKey)}, setItems{std::move(setItems)} {}
-    BoundCreateNodeInfo(const BoundCreateNodeInfo& other)
-        : node{other.node}, primaryKey{other.primaryKey}, setItems{other.setItems} {}
+    explicit ExtraCreateNodeInfo(std::shared_ptr<Expression> primaryKey)
+        : primaryKey{std::move(primaryKey)} {}
+    ExtraCreateNodeInfo(const ExtraCreateNodeInfo& other) : primaryKey{other.primaryKey} {}
 
-    inline std::unique_ptr<BoundCreateNodeInfo> copy() const {
-        return std::make_unique<BoundCreateNodeInfo>(*this);
+    inline std::unique_ptr<ExtraCreateInfo> copy() const final {
+        return std::make_unique<ExtraCreateNodeInfo>(*this);
     }
 };
 
-struct BoundCreateRelInfo {
-    std::shared_ptr<RelExpression> rel;
+struct BoundCreateInfo {
+    UpdateTableType updateTableType;
+    std::shared_ptr<Expression> nodeOrRel;
     std::vector<expression_pair> setItems;
+    std::unique_ptr<ExtraCreateInfo> extraInfo;
 
-    BoundCreateRelInfo(std::shared_ptr<RelExpression> rel, std::vector<expression_pair> setItems)
-        : rel{std::move(rel)}, setItems{std::move(setItems)} {}
-    BoundCreateRelInfo(const BoundCreateRelInfo& other)
-        : rel{other.rel}, setItems{other.setItems} {}
+    BoundCreateInfo(UpdateTableType updateTableType, std::shared_ptr<Expression> nodeOrRel,
+        std::vector<expression_pair> setItems, std::unique_ptr<ExtraCreateInfo> extraInfo)
+        : updateTableType{updateTableType}, nodeOrRel{std::move(nodeOrRel)},
+          setItems{std::move(setItems)}, extraInfo{std::move(extraInfo)} {}
+    BoundCreateInfo(const BoundCreateInfo& other)
+        : updateTableType{other.updateTableType}, nodeOrRel{other.nodeOrRel}, setItems{
+                                                                                  other.setItems} {
+        if (other.extraInfo) {
+            extraInfo = other.extraInfo->copy();
+        }
+    }
 
-    inline std::unique_ptr<BoundCreateRelInfo> copy() const {
-        return std::make_unique<BoundCreateRelInfo>(*this);
+    inline std::unique_ptr<BoundCreateInfo> copy() {
+        return std::make_unique<BoundCreateInfo>(*this);
     }
 };
 
