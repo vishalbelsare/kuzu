@@ -5,19 +5,27 @@ namespace binder {
 
 BoundDeleteClause::BoundDeleteClause(const BoundDeleteClause& other)
     : BoundUpdatingClause{common::ClauseType::DELETE_} {
-    for (auto& deleteNodeInfo : other.deleteNodeInfos) {
-        deleteNodeInfos.push_back(deleteNodeInfo->copy());
-    }
-    for (auto& deleteRel : other.deleteRels) {
-        deleteRels.push_back(deleteRel);
+    for (auto& info : other.infos) {
+        infos.push_back(info->copy());
     }
 }
 
-std::vector<BoundDeleteNodeInfo*> BoundDeleteClause::getNodeInfos() const {
-    std::vector<BoundDeleteNodeInfo*> result;
-    result.reserve(deleteNodeInfos.size());
-    for (auto& info : deleteNodeInfos) {
-        result.push_back(info.get());
+bool BoundDeleteClause::hasInfo(const std::function<bool(const BoundDeleteInfo&)>& check) const {
+    for (auto& info : infos) {
+        if (check(*info)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<BoundDeleteInfo*> BoundDeleteClause::getInfos(
+    const std::function<bool(const BoundDeleteInfo&)>& check) const {
+    std::vector<BoundDeleteInfo*> result;
+    for (auto& info : infos) {
+        if (check(*info)) {
+            result.push_back(info.get());
+        }
     }
     return result;
 }

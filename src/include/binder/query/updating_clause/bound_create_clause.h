@@ -19,7 +19,7 @@ public:
             return info.updateTableType == UpdateTableType::NODE;
         });
     }
-    std::vector<BoundCreateInfo*> getNodeInfos() const {
+    inline std::vector<BoundCreateInfo*> getNodeInfos() const {
         return getInfos([](const BoundCreateInfo& info) {
             return info.updateTableType == UpdateTableType::NODE;
         });
@@ -29,7 +29,7 @@ public:
             return info.updateTableType == UpdateTableType::REL;
         });
     }
-    std::vector<BoundCreateInfo*> getRelInfos() const {
+    inline std::vector<BoundCreateInfo*> getRelInfos() const {
         return getInfos([](const BoundCreateInfo& info) {
             return info.updateTableType == UpdateTableType::REL;
         });

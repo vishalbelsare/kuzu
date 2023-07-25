@@ -21,7 +21,7 @@ public:
             return info.updateTableType == UpdateTableType::NODE;
         });
     }
-    std::vector<BoundSetPropertyInfo*> getNodeInfos() const {
+    inline std::vector<BoundSetPropertyInfo*> getNodeInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
             return info.updateTableType == UpdateTableType::NODE;
         });
@@ -31,7 +31,7 @@ public:
             return info.updateTableType == UpdateTableType::REL;
         });
     }
-    std::vector<BoundSetPropertyInfo*> getRelInfos() const {
+    inline std::vector<BoundSetPropertyInfo*> getRelInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
             return info.updateTableType == UpdateTableType::REL;
         });

@@ -45,10 +45,12 @@ void PropertyCollector::visitSet(const BoundUpdatingClause& updatingClause) {
 void PropertyCollector::visitDelete(const BoundUpdatingClause& updatingClause) {
     auto& boundDeleteClause = (BoundDeleteClause&)updatingClause;
     for (auto& info : boundDeleteClause.getNodeInfos()) {
-        properties.insert(info->primaryKey);
+        auto extraInfo = (ExtraDeleteNodeInfo*)info->extraInfo.get();
+        properties.insert(extraInfo->primaryKey);
     }
-    for (auto& deleteRel : boundDeleteClause.getDeleteRels()) {
-        properties.insert(deleteRel->getInternalIDProperty());
+    for (auto& info : boundDeleteClause.getRelInfos()) {
+        auto rel = (RelExpression*)info->nodeOrRel.get();
+        properties.insert(rel->getInternalIDProperty());
     }
 }
 

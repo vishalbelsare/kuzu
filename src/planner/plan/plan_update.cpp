@@ -72,8 +72,8 @@ void QueryPlanner::planDeleteClause(
     binder::BoundUpdatingClause& updatingClause, LogicalPlan& plan) {
     appendAccumulate(common::AccumulateType::REGULAR, plan);
     auto& deleteClause = (BoundDeleteClause&)updatingClause;
-    if (deleteClause.hasDeleteRel()) {
-        appendDeleteRel(deleteClause.getDeleteRels(), plan);
+    if (deleteClause.hasRelInfo()) {
+        appendDeleteRel(deleteClause.getRelInfos(), plan);
     }
     if (deleteClause.hasNodeInfo()) {
         appendDeleteNode(deleteClause.getNodeInfos(), plan);

@@ -15,7 +15,7 @@ namespace binder {
 
 class BoundCreateInfo;
 class BoundSetPropertyInfo;
-class BoundDeleteNodeInfo;
+class BoundDeleteInfo;
 
 // BinderScope keeps track of expressions in scope and their aliases. We maintain the order of
 // expressions in
@@ -150,9 +150,8 @@ private:
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);
     expression_pair bindSetItem(
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);
-    std::unique_ptr<BoundDeleteNodeInfo> bindDeleteNodeInfo(
-        const std::shared_ptr<NodeExpression>& node);
-    std::shared_ptr<RelExpression> bindDeleteRel(std::shared_ptr<RelExpression> rel);
+    std::unique_ptr<BoundDeleteInfo> bindDeleteNodeInfo(std::shared_ptr<NodeExpression> node);
+    std::unique_ptr<BoundDeleteInfo> bindDeleteRelInfo(std::shared_ptr<RelExpression> rel);
 
     /*** bind projection clause ***/
     std::unique_ptr<BoundWithClause> bindWithClause(const parser::WithClause& withClause);

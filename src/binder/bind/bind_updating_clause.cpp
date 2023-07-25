@@ -238,11 +238,11 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindDeleteClause(
         case LogicalTypeID::NODE: {
             auto deleteNodeInfo =
                 bindDeleteNodeInfo(static_pointer_cast<NodeExpression>(nodeOrRel));
-            boundDeleteClause->addNodeInfo(std::move(deleteNodeInfo));
+            boundDeleteClause->addInfo(std::move(deleteNodeInfo));
         } break;
         case LogicalTypeID::REL: {
-            auto deleteRel = bindDeleteRel(static_pointer_cast<RelExpression>(nodeOrRel));
-            boundDeleteClause->addDeleteRel(std::move(deleteRel));
+            auto deleteRel = bindDeleteRelInfo(static_pointer_cast<RelExpression>(nodeOrRel));
+            boundDeleteClause->addInfo(std::move(deleteRel));
         } break;
         default:
             throw BinderException("Delete " + expressionTypeToString(nodeOrRel->expressionType) +
@@ -252,8 +252,7 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindDeleteClause(
     return boundDeleteClause;
 }
 
-std::unique_ptr<BoundDeleteNodeInfo> Binder::bindDeleteNodeInfo(
-    const std::shared_ptr<NodeExpression>& node) {
+std::unique_ptr<BoundDeleteInfo> Binder::bindDeleteNodeInfo(std::shared_ptr<NodeExpression> node) {
     if (node->isMultiLabeled()) {
         throw BinderException(
             "Delete node " + node->toString() + " with multiple node labels is not supported.");
@@ -262,16 +261,17 @@ std::unique_ptr<BoundDeleteNodeInfo> Binder::bindDeleteNodeInfo(
     auto nodeTableSchema = catalog.getReadOnlyVersion()->getNodeTableSchema(nodeTableID);
     auto primaryKeyExpression =
         expressionBinder.bindNodePropertyExpression(*node, nodeTableSchema->getPrimaryKey().name);
-    return std::make_unique<BoundDeleteNodeInfo>(node, primaryKeyExpression);
+    auto extraInfo = std::make_unique<ExtraDeleteNodeInfo>(primaryKeyExpression);
+    return std::make_unique<BoundDeleteInfo>(UpdateTableType::NODE, node, std::move(extraInfo));
 }
 
-std::shared_ptr<RelExpression> Binder::bindDeleteRel(std::shared_ptr<RelExpression> rel) {
+std::unique_ptr<BoundDeleteInfo> Binder::bindDeleteRelInfo(std::shared_ptr<RelExpression> rel) {
     if (rel->isMultiLabeled() || rel->isBoundByMultiLabeledNode()) {
         throw BinderException(
             "Delete rel " + rel->toString() +
             " with multiple rel labels or bound by multiple node labels is not supported.");
     }
-    return rel;
+    return std::make_unique<BoundDeleteInfo>(UpdateTableType::REL, rel, nullptr /* extraInfo */);
 }
 
 } // namespace binder

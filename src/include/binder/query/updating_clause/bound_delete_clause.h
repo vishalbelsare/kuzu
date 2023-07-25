@@ -11,25 +11,40 @@ public:
     BoundDeleteClause() : BoundUpdatingClause{common::ClauseType::DELETE_} {};
     BoundDeleteClause(const BoundDeleteClause& other);
 
-    inline void addNodeInfo(std::unique_ptr<BoundDeleteNodeInfo> info) {
-        deleteNodeInfos.push_back(std::move(info));
-    }
-    inline bool hasNodeInfo() const { return !deleteNodeInfos.empty(); }
-    std::vector<BoundDeleteNodeInfo*> getNodeInfos() const;
+    inline void addInfo(std::unique_ptr<BoundDeleteInfo> info) { infos.push_back(std::move(info)); }
 
-    inline void addDeleteRel(std::shared_ptr<RelExpression> deleteRel) {
-        deleteRels.push_back(std::move(deleteRel));
+    inline bool hasNodeInfo() const {
+        return hasInfo([](const BoundDeleteInfo& info) {
+            return info.updateTableType == UpdateTableType::NODE;
+        });
     }
-    inline bool hasDeleteRel() const { return !deleteRels.empty(); }
-    inline std::vector<std::shared_ptr<RelExpression>> getDeleteRels() const { return deleteRels; }
+    inline std::vector<BoundDeleteInfo*> getNodeInfos() const {
+        return getInfos([](const BoundDeleteInfo& info) {
+            return info.updateTableType == UpdateTableType::NODE;
+        });
+    }
+    inline bool hasRelInfo() const {
+        return hasInfo([](const BoundDeleteInfo& info) {
+            return info.updateTableType == UpdateTableType::REL;
+        });
+    }
+    inline std::vector<BoundDeleteInfo*> getRelInfos() const {
+        return getInfos([](const BoundDeleteInfo& info) {
+            return info.updateTableType == UpdateTableType::REL;
+        });
+    }
 
     inline std::unique_ptr<BoundUpdatingClause> copy() final {
         return std::make_unique<BoundDeleteClause>(*this);
     }
 
 private:
-    std::vector<std::unique_ptr<BoundDeleteNodeInfo>> deleteNodeInfos;
-    std::vector<std::shared_ptr<RelExpression>> deleteRels;
+    bool hasInfo(const std::function<bool(const BoundDeleteInfo& info)>& check) const;
+    std::vector<BoundDeleteInfo*> getInfos(
+        const std::function<bool(const BoundDeleteInfo& info)>& check) const;
+
+private:
+    std::vector<std::unique_ptr<BoundDeleteInfo>> infos;
 };
 
 } // namespace binder
