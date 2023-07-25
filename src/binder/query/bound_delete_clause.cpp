@@ -3,15 +3,14 @@
 namespace kuzu {
 namespace binder {
 
-std::unique_ptr<BoundUpdatingClause> BoundDeleteClause::copy() {
-    auto result = std::make_unique<BoundDeleteClause>();
-    for (auto& deleteNode : deleteNodes) {
-        result->addDeleteNode(deleteNode->copy());
+BoundDeleteClause::BoundDeleteClause(const BoundDeleteClause& other)
+    : BoundUpdatingClause{common::ClauseType::DELETE_} {
+    for (auto& deleteNodeInfo : other.deleteNodeInfos) {
+        deleteNodeInfos.push_back(deleteNodeInfo->copy());
     }
-    for (auto& deleteRel : deleteRels) {
-        result->addDeleteRel(deleteRel);
+    for (auto& deleteRel : other.deleteRels) {
+        deleteRels.push_back(deleteRel);
     }
-    return result;
 }
 
 } // namespace binder

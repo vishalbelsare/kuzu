@@ -14,13 +14,20 @@ public:
     inline const std::vector<std::unique_ptr<PatternElement>>& getPatternElementsRef() const {
         return patternElements;
     }
-    inline void addMergeAction(std::vector<parsed_expression_pair> mergeAction) {
-        mergeActions.push_back(std::move(mergeAction));
+    inline void addOnMatchAction(parsed_expression_pair action) {
+        onMatchActions.push_back(std::move(action));
+    }
+    inline bool hasOnMatchActions() const {
+        return !onMatchActions.empty();
+    }
+    inline void addOnCreateAction(parsed_expression_pair action) {
+        onCreateActions.push_back(std::move(action));
     }
 
 private:
     std::vector<std::unique_ptr<PatternElement>> patternElements;
-    std::vector<std::vector<parsed_expression_pair>> mergeActions;
+    std::vector<parsed_expression_pair> onMatchActions;
+    std::vector<parsed_expression_pair> onCreateActions;
 };
 
 } // namespace parser

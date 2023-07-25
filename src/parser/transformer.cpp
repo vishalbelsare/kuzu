@@ -169,11 +169,15 @@ std::unique_ptr<UpdatingClause> Transformer::transformCreate(CypherParser::OC_Cr
 std::unique_ptr<UpdatingClause> Transformer::transformMerge(CypherParser::OC_MergeContext& ctx) {
     auto mergeClause = std::make_unique<MergeClause>(transformPattern(*ctx.oC_Pattern()));
     for (auto& mergeActionCtx : ctx.oC_MergeAction()) {
-        std::vector<parsed_expression_pair> mergeAction;
-        for (auto& setItemCtx : mergeActionCtx->oC_Set()->oC_SetItem()) {
-            mergeAction.push_back(transformSetItem(*setItemCtx));
+        if (mergeActionCtx->MATCH()) {
+            for (auto& setItemCtx : mergeActionCtx->oC_Set()->oC_SetItem()) {
+                mergeClause->addOnMatchAction(transformSetItem(*setItemCtx));
+            }
+        } else {
+            for (auto& setItemCtx : mergeActionCtx->oC_Set()->oC_SetItem()) {
+                mergeClause->addOnCreateAction(transformSetItem(*setItemCtx));
+            }
         }
-        mergeClause->addMergeAction(std::move(mergeAction));
     }
     return mergeClause;
 }

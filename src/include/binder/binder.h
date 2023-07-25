@@ -144,20 +144,24 @@ private:
     std::vector<std::unique_ptr<BoundCreateNodeInfo>> bindCreateNodeInfos(
         const QueryGraphCollection& queryGraphCollection,
         const PropertyKeyValCollection& keyValCollection, const expression_set& nodesScope_);
-    std::vector<std::unique_ptr<BoundCreateRelInfo>> bindCreateRelInfos(const QueryGraphCollection& queryGraphCollection,
+    std::vector<std::unique_ptr<BoundCreateRelInfo>> bindCreateRelInfos(
+        const QueryGraphCollection& queryGraphCollection,
         const PropertyKeyValCollection& keyValCollection, const expression_set& relsScope_);
 
-    std::unique_ptr<BoundCreateNodeInfo> bindCreateNode(
+    std::unique_ptr<BoundCreateNodeInfo> bindCreateNodeInfo(
         std::shared_ptr<NodeExpression> node, const PropertyKeyValCollection& collection);
-    std::unique_ptr<BoundCreateRel> bindCreateRel(
+    std::unique_ptr<BoundCreateRelInfo> bindCreateRelInfo(
         std::shared_ptr<RelExpression> rel, const PropertyKeyValCollection& collection);
-    std::unique_ptr<BoundSetNodeProperty> bindSetNodeProperty(std::shared_ptr<NodeExpression> node,
+    std::unique_ptr<BoundSetNodePropertyInfo> bindSetNodePropertyInfo(
+        std::shared_ptr<NodeExpression> node,
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);
-    std::unique_ptr<BoundSetRelProperty> bindSetRelProperty(std::shared_ptr<RelExpression> rel,
+    std::unique_ptr<BoundSetRelPropertyInfo> bindSetRelPropertyInfo(
+        std::shared_ptr<RelExpression> rel,
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);
     expression_pair bindSetItem(
         std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem);
-    std::unique_ptr<BoundDeleteNode> bindDeleteNode(const std::shared_ptr<NodeExpression>& node);
+    std::unique_ptr<BoundDeleteNodeInfo> bindDeleteNodeInfo(
+        const std::shared_ptr<NodeExpression>& node);
     std::shared_ptr<RelExpression> bindDeleteRel(std::shared_ptr<RelExpression> rel);
 
     /*** bind projection clause ***/
