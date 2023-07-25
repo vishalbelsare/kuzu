@@ -17,7 +17,8 @@ public:
     }
     inline uint32_t getNumSetItems() const { return setItems.size(); }
     inline std::pair<ParsedExpression*, ParsedExpression*> getSetItem(uint32_t idx) const {
-        return std::make_pair(setItems[idx].first.get(), setItems[idx].second.get());
+        auto& [left, right] = setItems[idx];
+        return std::make_pair(left.get(), right.get());
     }
 
 private:

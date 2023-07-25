@@ -71,6 +71,21 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindMergeClause(
     auto createNodeInfos =
         bindCreateNodeInfos(*queryGraphCollection, *propertyCollection, nodesScope);
     auto createRelInfos = bindCreateRelInfos(*queryGraphCollection, *propertyCollection, relsScope);
+    auto boundMergeClause = std::make_unique<BoundMergeClause>(
+        std::move(queryGraphCollection), std::move(createNodeInfos), std::move(createRelInfos));
+    if (mergeClause.hasOnMatchSetItems()) {
+        for (auto i = 0u; i < mergeClause.getNumOnMatchSetItems(); ++i) {
+            auto setPropertyInfo = bindSetPropertyInfo(mergeClause.getOnMatchSetItem(i));
+            boundMergeClause->addOnMatchSetPropertyInfo(std::move(setPropertyInfo));
+        }
+    }
+    if (mergeClause.hasOnCreateSetItems()) {
+        for (auto i = 0u; i < mergeClause.getNumOnCreateSetItems(); ++i) {
+            auto setPropertyInfo = bindSetPropertyInfo(mergeClause.getOnCreateSetItem(i));
+            boundMergeClause->addOnCreateSetPropertyInfo(std::move(setPropertyInfo));
+        }
+    }
+    return boundMergeClause;
 }
 
 std::vector<std::unique_ptr<BoundCreateNodeInfo>> Binder::bindCreateNodeInfos(
@@ -180,42 +195,46 @@ std::unique_ptr<BoundUpdatingClause> Binder::bindSetClause(const UpdatingClause&
     auto& setClause = (SetClause&)updatingClause;
     auto boundSetClause = std::make_unique<BoundSetClause>();
     for (auto i = 0u; i < setClause.getNumSetItems(); ++i) {
-        auto setItem = setClause.getSetItem(i);
-        auto nodeOrRel = expressionBinder.bindExpression(*setItem.first->getChild(0));
-        switch (nodeOrRel->dataType.getLogicalTypeID()) {
-        case LogicalTypeID::NODE: {
-            auto node = static_pointer_cast<NodeExpression>(nodeOrRel);
-            boundSetClause->addSetNodeProperty(bindSetNodeProperty(node, setItem));
-        } break;
-        case LogicalTypeID::REL: {
-            auto rel = static_pointer_cast<RelExpression>(nodeOrRel);
-            boundSetClause->addSetRelProperty(bindSetRelProperty(rel, setItem));
-        } break;
-        default:
-            throw BinderException("Set " + expressionTypeToString(nodeOrRel->expressionType) +
-                                  " property is supported.");
-        }
+        boundSetClause->addSetPropertyInfo(bindSetPropertyInfo(setClause.getSetItem(i)));
     }
     return boundSetClause;
 }
 
-std::unique_ptr<BoundSetNodePropertyInfo> Binder::bindSetNodePropertyInfo(
-    std::shared_ptr<NodeExpression> node, std::pair<ParsedExpression*, ParsedExpression*> setItem) {
-    if (node->isMultiLabeled()) {
-        throw BinderException("Set property of node " + node->toString() +
+static void validateSetNodeProperty(const Expression& expression) {
+    auto& node = (const NodeExpression&)expression;
+    if (node.isMultiLabeled()) {
+        throw BinderException("Set property of node " + node.toString() +
                               " with multiple node labels is not supported.");
     }
-    return std::make_unique<BoundSetNodePropertyInfo>(std::move(node), bindSetItem(setItem));
 }
 
-std::unique_ptr<BoundSetRelPropertyInfo> Binder::bindSetRelPropertyInfo(
-    std::shared_ptr<RelExpression> rel, std::pair<ParsedExpression*, ParsedExpression*> setItem) {
-    if (rel->isMultiLabeled() || rel->isBoundByMultiLabeledNode()) {
-        throw BinderException("Set property of rel " + rel->toString() +
+static void validateSetRelProperty(const Expression& expression) {
+    auto& rel = (const RelExpression&)expression;
+    if (rel.isMultiLabeled() || rel.isBoundByMultiLabeledNode()) {
+        throw BinderException("Set property of rel " + rel.toString() +
                               " with multiple rel labels or bound by multiple node labels "
                               "is not supported.");
     }
-    return std::make_unique<BoundSetRelPropertyInfo>(std::move(rel), bindSetItem(setItem));
+}
+
+std::unique_ptr<BoundSetPropertyInfo> Binder::bindSetPropertyInfo(
+    std::pair<parser::ParsedExpression*, parser::ParsedExpression*> setItem) {
+    auto left = expressionBinder.bindExpression(*setItem.first->getChild(0));
+    switch (left->dataType.getLogicalTypeID()) {
+    case LogicalTypeID::NODE: {
+        validateSetNodeProperty(*left);
+        return std::make_unique<BoundSetPropertyInfo>(
+            SetPropertyType::NODE, left, bindSetItem(setItem));
+    }
+    case LogicalTypeID::REL: {
+        validateSetRelProperty(*left);
+        return std::make_unique<BoundSetPropertyInfo>(
+            SetPropertyType::REL, left, bindSetItem(setItem));
+    }
+    default:
+        throw BinderException(
+            "Set " + expressionTypeToString(left->expressionType) + " property is supported.");
+    }
 }
 
 expression_pair Binder::bindSetItem(std::pair<ParsedExpression*, ParsedExpression*> setItem) {

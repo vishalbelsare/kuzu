@@ -171,11 +171,11 @@ std::unique_ptr<UpdatingClause> Transformer::transformMerge(CypherParser::OC_Mer
     for (auto& mergeActionCtx : ctx.oC_MergeAction()) {
         if (mergeActionCtx->MATCH()) {
             for (auto& setItemCtx : mergeActionCtx->oC_Set()->oC_SetItem()) {
-                mergeClause->addOnMatchAction(transformSetItem(*setItemCtx));
+                mergeClause->addOnMatchSetItems(transformSetItem(*setItemCtx));
             }
         } else {
             for (auto& setItemCtx : mergeActionCtx->oC_Set()->oC_SetItem()) {
-                mergeClause->addOnCreateAction(transformSetItem(*setItemCtx));
+                mergeClause->addOnCreateSetItems(transformSetItem(*setItemCtx));
             }
         }
     }

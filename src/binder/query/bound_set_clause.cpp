@@ -5,11 +5,8 @@ namespace binder {
 
 BoundSetClause::BoundSetClause(const BoundSetClause& other)
     : BoundUpdatingClause{common::ClauseType::SET} {
-    for (auto& setNodePropertyInfo : other.setNodePropertyInfos) {
-        setNodePropertyInfos.push_back(setNodePropertyInfo->copy());
-    }
-    for (auto& setRelPropertyInfo : other.setRelPropertyInfos) {
-        setRelPropertyInfos.push_back(setRelPropertyInfo->copy());
+    for (auto& setPropertyInfo : other.setPropertyInfos) {
+        setPropertyInfos.push_back(setPropertyInfo->copy());
     }
 }
 
