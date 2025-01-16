@@ -1,6 +1,6 @@
 #pragma once
 
-#include "binder/query/bound_regular_query.h"
+#include "binder/query/normalized_single_query.h"
 #include "bound_statement.h"
 
 namespace kuzu {
@@ -12,35 +12,53 @@ public:
     virtual ~BoundStatementVisitor() = default;
 
     void visit(const BoundStatement& statement);
+    // Unsafe visitors are implemented on-demand. We may reuse safe visitor inside unsafe visitor
+    // if no other class need to overwrite an unsafe visitor.
+    void visitUnsafe(BoundStatement& statement);
 
-    virtual void visitRegularQuery(const BoundRegularQuery& regularQuery);
     virtual void visitSingleQuery(const NormalizedSingleQuery& singleQuery);
-    virtual void visitQueryPart(const NormalizedQueryPart& queryPart);
 
 protected:
-    virtual void visitCreateNodeTable(const BoundStatement& statement) {}
-    virtual void visitCreateRelTable(const BoundStatement& statement) {}
-    virtual void visitDropTable(const BoundStatement& statement) {}
-    virtual void visitRenameTable(const BoundStatement& statement) {}
-    virtual void visitAddProperty(const BoundStatement& statement) {}
-    virtual void visitDropProperty(const BoundStatement& statement) {}
-    virtual void visitRenameProperty(const BoundStatement& statement) {}
-    virtual void visitCopy(const BoundStatement& statement) {}
-    virtual void visitStandaloneCall(const BoundStatement& statement) {}
-    virtual void visitExplain(const BoundStatement& statement);
-    virtual void visitCreateMacro(const BoundStatement& statement) {}
+    virtual void visitCreateSequence(const BoundStatement&) {}
+    virtual void visitCreateTable(const BoundStatement&) {}
+    virtual void visitDrop(const BoundStatement&) {}
+    virtual void visitCreateType(const BoundStatement&) {}
+    virtual void visitAlter(const BoundStatement&) {}
+    virtual void visitCopyFrom(const BoundStatement&);
+    virtual void visitCopyTo(const BoundStatement&);
+    virtual void visitExportDatabase(const BoundStatement&) {}
+    virtual void visitImportDatabase(const BoundStatement&) {}
+    virtual void visitStandaloneCall(const BoundStatement&) {}
+    virtual void visitExplain(const BoundStatement&);
+    virtual void visitCreateMacro(const BoundStatement&) {}
+    virtual void visitTransaction(const BoundStatement&) {}
+    virtual void visitExtension(const BoundStatement&) {}
 
+    virtual void visitRegularQuery(const BoundStatement& statement);
+    virtual void visitRegularQueryUnsafe(BoundStatement& statement);
+    virtual void visitSingleQueryUnsafe(NormalizedSingleQuery& singleQuery);
+    virtual void visitQueryPart(const NormalizedQueryPart& queryPart);
+    virtual void visitQueryPartUnsafe(NormalizedQueryPart& queryPart);
     void visitReadingClause(const BoundReadingClause& readingClause);
-    virtual void visitMatch(const BoundReadingClause& readingClause) {}
-    virtual void visitUnwind(const BoundReadingClause& readingClause) {}
-    virtual void visitInQueryCall(const BoundReadingClause& statement) {}
+    void visitReadingClauseUnsafe(BoundReadingClause& readingClause);
+    virtual void visitMatch(const BoundReadingClause&) {}
+    virtual void visitMatchUnsafe(BoundReadingClause&) {}
+    virtual void visitUnwind(const BoundReadingClause& /*readingClause*/) {}
+    virtual void visitTableFunctionCall(const BoundReadingClause&) {}
+    virtual void visitGDSCall(const BoundReadingClause&) {}
+    virtual void visitLoadFrom(const BoundReadingClause& /*statement*/) {}
     void visitUpdatingClause(const BoundUpdatingClause& updatingClause);
-    virtual void visitSet(const BoundUpdatingClause& updatingClause) {}
-    virtual void visitDelete(const BoundUpdatingClause& updatingClause) {}
-    virtual void visitCreate(const BoundUpdatingClause& updatingClause) {}
+    virtual void visitSet(const BoundUpdatingClause& /*updatingClause*/) {}
+    virtual void visitDelete(const BoundUpdatingClause& /* updatingClause*/) {}
+    virtual void visitInsert(const BoundUpdatingClause& /* updatingClause*/) {}
+    virtual void visitMerge(const BoundUpdatingClause& /* updatingClause*/) {}
 
-    virtual void visitProjectionBody(const BoundProjectionBody& projectionBody) {}
-    virtual void visitProjectionBodyPredicate(const std::shared_ptr<Expression>& predicate) {}
+    virtual void visitProjectionBody(const BoundProjectionBody& /* projectionBody*/) {}
+    virtual void visitProjectionBodyPredicate(const std::shared_ptr<Expression>& /* predicate*/) {}
+    virtual void visitAttachDatabase(const BoundStatement&) {}
+    virtual void visitDetachDatabase(const BoundStatement&) {}
+    virtual void visitUseDatabase(const BoundStatement&) {}
+    virtual void visitStandaloneCallFunction(const BoundStatement&) {}
 };
 
 } // namespace binder

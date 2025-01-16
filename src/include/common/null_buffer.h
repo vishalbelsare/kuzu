@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 namespace kuzu {
 namespace common {
@@ -18,6 +19,11 @@ public:
     static inline void setNull(uint8_t* nullBytes, uint64_t valueIdx) {
         nullBytes[valueIdx / NUM_NULL_MASKS_PER_BYTE] |=
             (1 << (valueIdx % NUM_NULL_MASKS_PER_BYTE));
+    }
+
+    static inline void setNoNull(uint8_t* nullBytes, uint64_t valueIdx) {
+        nullBytes[valueIdx / NUM_NULL_MASKS_PER_BYTE] &=
+            ~(1 << (valueIdx % NUM_NULL_MASKS_PER_BYTE));
     }
 
     static inline uint64_t getNumBytesForNullValues(uint64_t numValues) {

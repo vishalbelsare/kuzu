@@ -2,16 +2,17 @@
 
 #include "binder/expression/literal_expression.h"
 
+using namespace kuzu::common;
+
 namespace kuzu {
 namespace binder {
 
-std::unique_ptr<BoundStatementResult> BoundStatementResult::createSingleStringColumnResult(
-    std::string columnName) {
-    auto result = std::make_unique<BoundStatementResult>();
-    auto value = std::make_unique<common::Value>(
-        common::LogicalType{common::LogicalTypeID::STRING}, columnName);
+BoundStatementResult BoundStatementResult::createSingleStringColumnResult(
+    const std::string& columnName) {
+    auto result = BoundStatementResult();
+    auto value = Value(LogicalType::STRING(), columnName);
     auto stringColumn = std::make_shared<LiteralExpression>(std::move(value), columnName);
-    result->addColumn(stringColumn);
+    result.addColumn(columnName, stringColumn);
     return result;
 }
 

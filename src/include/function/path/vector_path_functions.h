@@ -1,54 +1,55 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-struct NodesVectorFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct NodesFunction {
+    static constexpr const char* name = "NODES";
+
+    static function_set getFunctionSet();
 };
 
-struct RelsVectorFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct RelsFunction {
+    static constexpr const char* name = "RELS";
+
+    static function_set getFunctionSet();
 };
 
 struct PropertiesBindData : public FunctionBindData {
-    common::vector_idx_t childIdx;
+    common::idx_t childIdx;
 
-    PropertiesBindData(common::LogicalType dataType, common::vector_idx_t childIdx)
+    PropertiesBindData(common::LogicalType dataType, common::idx_t childIdx)
         : FunctionBindData{std::move(dataType)}, childIdx{childIdx} {}
+
+    inline std::unique_ptr<FunctionBindData> copy() const override {
+        return std::make_unique<PropertiesBindData>(resultType.copy(), childIdx);
+    }
 };
 
-struct PropertiesVectorFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
-    static void compileFunc(FunctionBindData* bindData,
-        const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        std::shared_ptr<common::ValueVector>& result);
-    static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::ValueVector& result);
+struct PropertiesFunction {
+    static constexpr const char* name = "PROPERTIES";
+
+    static function_set getFunctionSet();
 };
 
-struct IsTrailVectorFunction {
-    static vector_function_definitions getDefinitions();
-    static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::ValueVector& result);
-    static bool selectFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::SelectionVector& selectionVector);
+struct IsTrailFunction {
+    static constexpr const char* name = "IS_TRAIL";
+
+    static function_set getFunctionSet();
 };
 
-struct IsACyclicVectorFunction {
-    static vector_function_definitions getDefinitions();
-    static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::ValueVector& result);
-    static bool selectFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::SelectionVector& selectionVector);
+struct IsACyclicFunction {
+    static constexpr const char* name = "IS_ACYCLIC";
+
+    static function_set getFunctionSet();
+};
+
+struct LengthFunction {
+    static constexpr const char* name = "LENGTH";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

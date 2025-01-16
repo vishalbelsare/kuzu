@@ -1,20 +1,11 @@
 #pragma once
 
-#include <unordered_map>
-
-#include "common/types/types_include.h"
-#include "function/hash/hash_functions.h"
+#include "common/types/internal_id_util.h"
 
 namespace kuzu {
 namespace processor {
 
-namespace frontier {
 using node_rel_id_t = std::pair<common::nodeID_t, common::relID_t>;
-
-using node_id_set_t = std::unordered_set<common::nodeID_t, function::InternalIDHasher>;
-template<typename T>
-using node_id_map_t = std::unordered_map<common::nodeID_t, T, function::InternalIDHasher>;
-} // namespace frontier
 
 /*
  * A Frontier can stores dst node offsets, its multiplicity and its bwd edges. Note that we don't
@@ -34,8 +25,6 @@ public:
         nodeIDToMultiplicity.clear();
     }
 
-    inline void addNode(common::nodeID_t nodeID) { nodeIDs.push_back(nodeID); }
-
     void addEdge(common::nodeID_t boundNodeID, common::nodeID_t nbrNodeID, common::nodeID_t relID);
 
     void addNodeWithMultiplicity(common::nodeID_t nodeID, uint64_t multiplicity);
@@ -46,8 +35,22 @@ public:
 
 public:
     std::vector<common::nodeID_t> nodeIDs;
-    frontier::node_id_map_t<std::vector<frontier::node_rel_id_t>> bwdEdges;
-    frontier::node_id_map_t<uint64_t> nodeIDToMultiplicity;
+    common::node_id_map_t<std::vector<node_rel_id_t>> bwdEdges;
+    common::node_id_map_t<uint64_t> nodeIDToMultiplicity;
+};
+
+// We assume number of edges per table is smaller than 2^63. So we mask the highest bit of rel
+// offset to indicate if the src and dst node this relationship need to be flipped.
+struct RelIDMasker {
+    static constexpr uint64_t FLIP_SRC_DST_MASK = 0x8000000000000000;
+    static constexpr uint64_t CLEAR_FLIP_SRC_DST_MASK = 0x7FFFFFFFFFFFFFFF;
+
+    static void markFlip(common::internalID_t& relID) { relID.offset |= FLIP_SRC_DST_MASK; }
+    static bool needFlip(common::internalID_t& relID) { return relID.offset & FLIP_SRC_DST_MASK; }
+    static void clearMark(common::internalID_t& relID) { relID.offset &= CLEAR_FLIP_SRC_DST_MASK; }
+    static common::internalID_t getWithoutMark(const common::internalID_t& relID) {
+        return common::internalID_t(relID.offset & CLEAR_FLIP_SRC_DST_MASK, relID.tableID);
+    }
 };
 
 } // namespace processor

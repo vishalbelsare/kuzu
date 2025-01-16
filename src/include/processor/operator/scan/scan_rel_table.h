@@ -1,64 +1,94 @@
 #pragma once
 
-#include "processor/operator/physical_operator.h"
+#include "binder/expression/rel_expression.h"
+#include "common/enums/extend_direction.h"
+#include "processor/operator/scan/scan_table.h"
+#include "storage/predicate/column_predicate.h"
 #include "storage/store/rel_table.h"
 
 namespace kuzu {
+namespace storage {
+class MemoryManager;
+}
 namespace processor {
 
-struct ScanRelTalePosInfo {
-    DataPos inNodeVectorPos;
-    DataPos outNodeVectorPos;
-    std::vector<DataPos> outVectorsPos;
+struct ScanRelTableInfo {
+    storage::RelTable* table;
+    common::RelDataDirection direction;
+    std::vector<common::column_id_t> columnIDs;
+    std::vector<storage::ColumnPredicateSet> columnPredicates;
 
-    ScanRelTalePosInfo(const DataPos& inNodeVectorPos, const DataPos& outNodeVectorPos,
-        std::vector<DataPos> outVectorsPos)
-        : inNodeVectorPos{inNodeVectorPos}, outNodeVectorPos{outNodeVectorPos},
-          outVectorsPos{std::move(outVectorsPos)} {}
-    ScanRelTalePosInfo(const ScanRelTalePosInfo& other)
-        : inNodeVectorPos{other.inNodeVectorPos}, outNodeVectorPos{other.outNodeVectorPos},
-          outVectorsPos{other.outVectorsPos} {}
+    std::unique_ptr<storage::RelTableScanState> scanState;
 
-    inline std::unique_ptr<ScanRelTalePosInfo> copy() const {
-        return std::make_unique<ScanRelTalePosInfo>(*this);
-    }
+    ScanRelTableInfo(storage::RelTable* table, common::RelDataDirection direction,
+        std::vector<common::column_id_t> columnIDs,
+        std::vector<storage::ColumnPredicateSet> columnPredicates)
+        : table{table}, direction{direction}, columnIDs{std::move(columnIDs)},
+          columnPredicates{std::move(columnPredicates)} {}
+    EXPLICIT_COPY_DEFAULT_MOVE(ScanRelTableInfo);
+
+    void initScanState(const ExecutionContext* context);
+
+private:
+    ScanRelTableInfo(const ScanRelTableInfo& other)
+        : table{other.table}, direction{other.direction}, columnIDs{other.columnIDs},
+          columnPredicates{copyVector(other.columnPredicates)} {}
 };
 
-struct RelTableScanInfo {
-    storage::RelTableDataType relTableDataType;
-    storage::DirectedRelTableData* tableData;
-    storage::RelStatistics* relStats;
-    std::vector<common::property_id_t> propertyIds;
+struct ScanRelTablePrintInfo final : OPPrintInfo {
+    std::vector<std::string> tableNames;
+    binder::expression_vector properties;
+    std::shared_ptr<binder::NodeExpression> boundNode;
+    std::shared_ptr<binder::RelExpression> rel;
+    std::shared_ptr<binder::NodeExpression> nbrNode;
+    common::ExtendDirection direction;
+    std::string alias;
 
-    RelTableScanInfo(storage::RelTableDataType relTableDataType,
-        storage::DirectedRelTableData* tableData, storage::RelStatistics* relStats,
-        std::vector<common::property_id_t> propertyIds)
-        : relTableDataType{relTableDataType}, tableData{tableData}, relStats{relStats},
-          propertyIds{std::move(propertyIds)} {}
-    RelTableScanInfo(const RelTableScanInfo& other)
-        : relTableDataType{other.relTableDataType}, tableData{other.tableData},
-          relStats{other.relStats}, propertyIds{other.propertyIds} {}
+    ScanRelTablePrintInfo(std::vector<std::string> tableNames, binder::expression_vector properties,
+        std::shared_ptr<binder::NodeExpression> boundNode,
+        std::shared_ptr<binder::RelExpression> rel, std::shared_ptr<binder::NodeExpression> nbrNode,
+        common::ExtendDirection direction, std::string alias)
+        : tableNames{std::move(tableNames)}, properties{std::move(properties)},
+          boundNode{std::move(boundNode)}, rel{std::move(rel)}, nbrNode{std::move(nbrNode)},
+          direction{direction}, alias{std::move(alias)} {}
 
-    inline std::unique_ptr<RelTableScanInfo> copy() const {
-        return std::make_unique<RelTableScanInfo>(*this);
+    std::string toString() const override;
+
+    std::unique_ptr<OPPrintInfo> copy() const override {
+        return std::unique_ptr<ScanRelTablePrintInfo>(new ScanRelTablePrintInfo(*this));
     }
+
+private:
+    ScanRelTablePrintInfo(const ScanRelTablePrintInfo& other)
+        : OPPrintInfo{other}, tableNames{other.tableNames}, properties{other.properties},
+          boundNode{other.boundNode}, rel{other.rel}, nbrNode{other.nbrNode},
+          direction{other.direction}, alias{other.alias} {}
 };
 
-class ScanRelTable : public PhysicalOperator {
-protected:
-    ScanRelTable(std::unique_ptr<ScanRelTalePosInfo> posInfo, PhysicalOperatorType operatorType,
-        std::unique_ptr<PhysicalOperator> child, uint32_t id, const std::string& paramsString)
-        : PhysicalOperator{operatorType, std::move(child), id, paramsString}, posInfo{std::move(
-                                                                                  posInfo)} {}
+class ScanRelTable final : public ScanTable {
+    static constexpr PhysicalOperatorType type_ = PhysicalOperatorType::SCAN_REL_TABLE;
+
+public:
+    ScanRelTable(ScanTableInfo info, ScanRelTableInfo relInfo,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo)
+        : ScanTable{type_, std::move(info), std::move(child), id, std::move(printInfo)},
+          relInfo{std::move(relInfo)} {}
 
     void initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) override;
 
-protected:
-    std::unique_ptr<ScanRelTalePosInfo> posInfo;
+    bool getNextTuplesInternal(ExecutionContext* context) override;
 
-    common::ValueVector* inNodeVector;
-    common::ValueVector* outNodeVector;
-    std::vector<common::ValueVector*> outVectors;
+    std::unique_ptr<PhysicalOperator> clone() override {
+        return std::make_unique<ScanRelTable>(info.copy(), relInfo.copy(), children[0]->clone(), id,
+            printInfo->copy());
+    }
+
+private:
+    void initVectors(storage::TableScanState& state, const ResultSet& resultSet) const override;
+
+protected:
+    ScanRelTableInfo relInfo;
 };
 
 } // namespace processor

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/api.h"
 #include "common/types/ku_string.h"
 
 namespace kuzu {
@@ -27,13 +26,23 @@ struct HexFormatConstants {
 struct Blob {
     static std::string toString(const uint8_t* value, uint64_t len);
 
-    static inline std::string toString(blob_t& blob) {
+    static inline std::string toString(const blob_t& blob) {
         return toString(blob.value.getData(), blob.value.len);
     }
 
     static uint64_t getBlobSize(const ku_string_t& blob);
 
     static uint64_t fromString(const char* str, uint64_t length, uint8_t* resultBuffer);
+
+    template<typename T>
+    static inline T getValue(const blob_t& data) {
+        return *reinterpret_cast<const T*>(data.value.getData());
+    }
+    template<typename T>
+    // NOLINTNEXTLINE(readability-non-const-parameter): Would cast away qualifiers.
+    static inline T getValue(char* data) {
+        return *reinterpret_cast<T*>(data);
+    }
 
 private:
     static void validateHexCode(const uint8_t* blobStr, uint64_t length, uint64_t curPos);

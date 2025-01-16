@@ -1,54 +1,62 @@
-name: Build-Mac-Precompiled-Binaries
+name: Build Mac Precompiled Binaries
 
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      isNightly:
+        type: boolean
+        required: true
+        default: false
+env:
+  PIP_BREAK_SYSTEM_PACKAGES: 1
 
 jobs:
-  build-precompiled-bin:
-    runs-on: self-hosted-mac-arm
+  build-precompiled-bin-universal:
+    runs-on: self-hosted-mac-x64
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      
+      - name: Update nightly version
+        if: ${{ inputs.isNightly == true }}
+        run: |
+          pip3 install packaging
+          python3 update-nightly-build-version.py
+        working-directory: scripts
 
-      - name: Install networkx
-        run: python3 -m pip install networkx --user
-
-      - name: Build precompiled binaries for Apple Silicon
-        run: python3 build.py
-        working-directory: ./scripts/pre-compiled-bins/
+      - name: Build universal precompiled binaries
+        run: |
+          make NUM_THREADS=$(sysctl -n hw.ncpu)
+          make install
         env:
           MACOSX_DEPLOYMENT_TARGET: 11.0
-          ARCHFLAGS: "-arch arm64"
+          CMAKE_OSX_ARCHITECTURES: "x86_64;arm64"
 
-      - uses: actions/upload-artifact@v3
+      - name: Collect artifacts
+        run: |
+          mv install/include/kuzu.h .
+          mv install/include/kuzu.hpp .
+          mv install/lib/libkuzu.dylib .
+          mv install/bin/kuzu .
+
+      - name: Verify binary information
+        run: |
+          file -b kuzu
+          otool -l kuzu | grep minos
+          file -b libkuzu.dylib
+          otool -l libkuzu.dylib | grep minos
+
+      - name: Create tarball
+        run: |
+          tar -czvf libkuzu-osx-universal.tar.gz kuzu.h kuzu.hpp libkuzu.dylib
+          tar -czvf kuzu_cli-osx-universal.tar.gz kuzu
+
+      - uses: actions/upload-artifact@v4
         with:
-          name: libkuzu-osx-arm64
-          path: |
-            ./scripts/pre-compiled-bins/kuzu.h
-            ./scripts/pre-compiled-bins/kuzu.hpp
-            ./scripts/pre-compiled-bins/libkuzu.dylib
+          name: libkuzu-osx-universal
+          path: libkuzu-osx-universal.tar.gz
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
-          name: kuzu_cli-osx-arm64
-          path: ./scripts/pre-compiled-bins/kuzu
-
-      - name: Build precompiled binaries for Intel
-        run: python3 build.py
-        working-directory: ./scripts/pre-compiled-bins/
-        env:
-          MACOSX_DEPLOYMENT_TARGET: 10.15
-          ARCHFLAGS: "-arch x86_64"
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: libkuzu-osx-x86_64
-          path: |
-            ./scripts/pre-compiled-bins/kuzu.h
-            ./scripts/pre-compiled-bins/kuzu.hpp
-            ./scripts/pre-compiled-bins/libkuzu.dylib
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: kuzu_cli-osx-x86_64
-          path: ./scripts/pre-compiled-bins/kuzu
+          name: kuzu_cli-osx-universal
+          path: kuzu_cli-osx-universal.tar.gz

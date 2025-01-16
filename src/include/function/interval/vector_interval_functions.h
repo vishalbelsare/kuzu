@@ -1,78 +1,85 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "function/scalar_function.h"
 #include "interval_functions.h"
 
 namespace kuzu {
 namespace function {
 
-class VectorIntervalFunction : public VectorFunction {
+struct IntervalFunction {
 public:
     template<class OPERATION>
-    static inline vector_function_definitions getUnaryIntervalFunctionDefintion(
-        std::string funcName) {
-        vector_function_definitions result;
-        result.push_back(std::make_unique<VectorFunctionDefinition>(funcName,
+    static function_set getUnaryIntervalFunction(std::string funcName) {
+        function_set result;
+        result.push_back(std::make_unique<ScalarFunction>(funcName,
             std::vector<common::LogicalTypeID>{common::LogicalTypeID::INT64},
             common::LogicalTypeID::INTERVAL,
-            UnaryExecFunction<int64_t, common::interval_t, OPERATION>));
+            ScalarFunction::UnaryExecFunction<int64_t, common::interval_t, OPERATION>));
         return result;
     }
 };
 
-struct ToYearsVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToYears>(
-            common::TO_YEARS_FUNC_NAME);
+struct ToYearsFunction {
+    static constexpr const char* name = "TO_YEARS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToYears>(name);
     }
 };
 
-struct ToMonthsVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToMonths>(
-            common::TO_MONTHS_FUNC_NAME);
+struct ToMonthsFunction {
+    static constexpr const char* name = "TO_MONTHS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToMonths>(name);
     }
 };
 
-struct ToDaysVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToDays>(
-            common::TO_DAYS_FUNC_NAME);
+struct ToDaysFunction {
+    static constexpr const char* name = "TO_DAYS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToDays>(name);
     }
 };
 
-struct ToHoursVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToHours>(
-            common::TO_HOURS_FUNC_NAME);
+struct ToHoursFunction {
+    static constexpr const char* name = "TO_HOURS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToHours>(name);
     }
 };
 
-struct ToMinutesVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToMinutes>(
-            common::TO_MINUTES_FUNC_NAME);
+struct ToMinutesFunction {
+    static constexpr const char* name = "TO_MINUTES";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToMinutes>(name);
     }
 };
 
-struct ToSecondsVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToSeconds>(
-            common::TO_SECONDS_FUNC_NAME);
+struct ToSecondsFunction {
+    static constexpr const char* name = "TO_SECONDS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToSeconds>(name);
     }
 };
 
-struct ToMillisecondsVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToMilliseconds>(
-            common::TO_MILLISECONDS_FUNC_NAME);
+struct ToMillisecondsFunction {
+    static constexpr const char* name = "TO_MILLISECONDS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToMilliseconds>(name);
     }
 };
 
-struct ToMicrosecondsVectorFunction : public VectorIntervalFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return VectorIntervalFunction::getUnaryIntervalFunctionDefintion<ToMicroseconds>(
-            common::TO_MICROSECONDS_FUNC_NAME);
+struct ToMicrosecondsFunction {
+    static constexpr const char* name = "TO_MICROSECONDS";
+
+    static function_set getFunctionSet() {
+        return IntervalFunction::getUnaryIntervalFunction<ToMicroseconds>(name);
     }
 };
 

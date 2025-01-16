@@ -2,7 +2,7 @@
 # is governed by a BSD-style license that can be found in the LICENSE file.
 
 # Old enough to support Ubuntu Trusty.
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.15)
 
 if(POLICY CMP0048)
     cmake_policy(SET CMP0048 NEW)
@@ -10,6 +10,10 @@ endif()
 
 if(POLICY CMP0063)
     cmake_policy(SET CMP0063 NEW)
+endif()
+
+if(POLICY CMP0069)
+    cmake_policy(SET CMP0069 NEW)
 endif()
 
 project(RE2 CXX)
@@ -92,7 +96,3 @@ add_library(re2 STATIC ${RE2_SOURCES})
 target_include_directories(
         re2
         PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>)
-
-install(TARGETS re2
-        LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
-        ARCHIVE DESTINATION "${INSTALL_LIB_DIR}")

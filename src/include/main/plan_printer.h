@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cassert>
-#include <fstream>
 #include <sstream>
 #include <string>
 
+#include "common/assert.h"
 #include "common/profiler.h"
 #include "json_fwd.hpp"
 #include "kuzu_fwd.h"
@@ -14,7 +13,8 @@ namespace main {
 
 class OpProfileBox {
 public:
-    OpProfileBox(std::string opName, std::string paramsName, std::vector<std::string> attributes);
+    OpProfileBox(std::string opName, const std::string& paramsName,
+        std::vector<std::string> attributes);
 
     inline std::string getOpName() const { return opName; }
 
@@ -36,16 +36,26 @@ private:
 
 class OpProfileTree {
 public:
-    OpProfileTree(processor::PhysicalOperator* opProfileBoxes, common::Profiler& profiler);
+    OpProfileTree(const processor::PhysicalOperator* op, common::Profiler& profiler);
+
+    explicit OpProfileTree(const planner::LogicalOperator* op);
 
     std::ostringstream printPlanToOstream() const;
 
-private:
-    static void calculateNumRowsAndColsForOp(
-        processor::PhysicalOperator* op, uint32_t& numRows, uint32_t& numCols);
+    std::ostringstream printLogicalPlanToOstream() const;
 
-    uint32_t fillOpProfileBoxes(processor::PhysicalOperator* op, uint32_t rowIdx, uint32_t colIdx,
-        uint32_t& maxFieldWidth, common::Profiler& profiler);
+private:
+    static void calculateNumRowsAndColsForOp(const processor::PhysicalOperator* op,
+        uint32_t& numRows, uint32_t& numCols);
+
+    static void calculateNumRowsAndColsForOp(const planner::LogicalOperator* op, uint32_t& numRows,
+        uint32_t& numCols);
+
+    uint32_t fillOpProfileBoxes(const processor::PhysicalOperator* op, uint32_t rowIdx,
+        uint32_t colIdx, uint32_t& maxFieldWidth, common::Profiler& profiler);
+
+    uint32_t fillOpProfileBoxes(const planner::LogicalOperator* op, uint32_t rowIdx,
+        uint32_t colIdx, uint32_t& maxFieldWidth);
 
     void printOpProfileBoxUpperFrame(uint32_t rowIdx, std::ostringstream& oss) const;
 
@@ -53,23 +63,24 @@ private:
 
     void printOpProfileBoxLowerFrame(uint32_t rowIdx, std::ostringstream& oss) const;
 
-    void prettyPrintPlanTitle(std::ostringstream& oss) const;
+    void prettyPrintPlanTitle(std::ostringstream& oss, std::string title) const;
 
     static std::string genHorizLine(uint32_t len);
 
     inline void validateRowIdxAndColIdx(uint32_t rowIdx, uint32_t colIdx) const {
-        assert(0 <= rowIdx && rowIdx < opProfileBoxes.size() && 0 <= colIdx &&
-               colIdx < opProfileBoxes[rowIdx].size());
+        KU_ASSERT(rowIdx < opProfileBoxes.size() && colIdx < opProfileBoxes[rowIdx].size());
+        (void)rowIdx;
+        (void)colIdx;
     }
 
-    void insertOpProfileBox(
-        uint32_t rowIdx, uint32_t colIdx, std::unique_ptr<OpProfileBox> opProfileBox);
+    void insertOpProfileBox(uint32_t rowIdx, uint32_t colIdx,
+        std::unique_ptr<OpProfileBox> opProfileBox);
 
     OpProfileBox* getOpProfileBox(uint32_t rowIdx, uint32_t colIdx) const;
 
     bool hasOpProfileBox(uint32_t rowIdx, uint32_t colIdx) const {
-        return 0 <= rowIdx && rowIdx < opProfileBoxes.size() && 0 <= colIdx &&
-               colIdx < opProfileBoxes[rowIdx].size() && getOpProfileBox(rowIdx, colIdx);
+        return rowIdx < opProfileBoxes.size() && colIdx < opProfileBoxes[rowIdx].size() &&
+               getOpProfileBox(rowIdx, colIdx);
     }
 
     //! Returns true if there is a valid OpProfileBox on the upper left side of the OpProfileBox
@@ -83,29 +94,26 @@ private:
     uint32_t opProfileBoxWidth;
     static constexpr uint32_t INDENT_WIDTH = 3u;
     static constexpr uint32_t BOX_FRAME_WIDTH = 1u;
+    static constexpr uint32_t MIN_LOGICAL_BOX_WIDTH = 22u;
 };
 
-class PlanPrinter {
+struct PlanPrinter {
+    static nlohmann::json printPlanToJson(const processor::PhysicalPlan* physicalPlan,
+        common::Profiler* profiler);
+    static std::ostringstream printPlanToOstream(const processor::PhysicalPlan* physicalPlan,
+        common::Profiler* profiler);
+    static std::string getOperatorName(const processor::PhysicalOperator* physicalOperator);
+    static std::string getOperatorParams(const processor::PhysicalOperator* physicalOperator);
 
-public:
-    PlanPrinter(processor::PhysicalPlan* physicalPlan, common::Profiler* profiler)
-        : physicalPlan{physicalPlan}, profiler{profiler} {};
-
-    nlohmann::json printPlanToJson();
-
-    std::ostringstream printPlanToOstream();
-
-    static inline std::string getOperatorName(processor::PhysicalOperator* physicalOperator);
-
-    static inline std::string getOperatorParams(processor::PhysicalOperator* physicalOperator);
-
-private:
-    nlohmann::json toJson(
-        processor::PhysicalOperator* physicalOperator, common::Profiler& profiler);
+    static nlohmann::json printPlanToJson(const planner::LogicalPlan* logicalPlan);
+    static std::ostringstream printPlanToOstream(const planner::LogicalPlan* logicalPlan);
+    static std::string getOperatorName(const planner::LogicalOperator* logicalOperator);
+    static std::string getOperatorParams(const planner::LogicalOperator* logicalOperator);
 
 private:
-    processor::PhysicalPlan* physicalPlan;
-    common::Profiler* profiler;
+    static nlohmann::json toJson(const processor::PhysicalOperator* physicalOperator,
+        common::Profiler& profiler_);
+    static nlohmann::json toJson(const planner::LogicalOperator* logicalOperator);
 };
 
 } // namespace main
