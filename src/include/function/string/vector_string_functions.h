@@ -1,160 +1,249 @@
 #pragma once
 
+#include "function/scalar_function.h"
 #include "function/string/functions/lower_function.h"
 #include "function/string/functions/ltrim_function.h"
 #include "function/string/functions/reverse_function.h"
 #include "function/string/functions/rtrim_function.h"
 #include "function/string/functions/trim_function.h"
 #include "function/string/functions/upper_function.h"
-#include "function/vector_functions.h"
 
 namespace kuzu {
 namespace function {
 
-struct VectorStringFunction : public VectorFunction {
-
-    template<typename A_TYPE, typename B_TYPE, typename C_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void TernaryStringExecFunction(
-        const std::vector<std::shared_ptr<common::ValueVector>>& params,
-        common::ValueVector& result) {
-        assert(params.size() == 3);
-        TernaryFunctionExecutor::executeString<A_TYPE, B_TYPE, C_TYPE, RESULT_TYPE, FUNC>(
-            *params[0], *params[1], *params[2], result);
-    }
-
-    template<typename LEFT_TYPE, typename RIGHT_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void BinaryStringExecFunction(
-        const std::vector<std::shared_ptr<common::ValueVector>>& params,
-        common::ValueVector& result) {
-        assert(params.size() == 2);
-        BinaryFunctionExecutor::executeString<LEFT_TYPE, RIGHT_TYPE, RESULT_TYPE, FUNC>(
-            *params[0], *params[1], result);
-    }
-
-    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void UnaryStringExecFunction(
-        const std::vector<std::shared_ptr<common::ValueVector>>& params,
-        common::ValueVector& result) {
-        assert(params.size() == 1);
-        UnaryFunctionExecutor::executeString<OPERAND_TYPE, RESULT_TYPE, FUNC>(*params[0], result);
-    }
-
+struct VectorStringFunction {
     template<class OPERATION>
-    static inline vector_function_definitions getUnaryStrFunctionDefintion(std::string funcName) {
-        vector_function_definitions definitions;
-        definitions.emplace_back(std::make_unique<VectorFunctionDefinition>(funcName,
+    static inline function_set getUnaryStrFunction(std::string funcName) {
+        function_set functionSet;
+        functionSet.emplace_back(std::make_unique<ScalarFunction>(funcName,
             std::vector<common::LogicalTypeID>{common::LogicalTypeID::STRING},
             common::LogicalTypeID::STRING,
-            UnaryStringExecFunction<common::ku_string_t, common::ku_string_t, OPERATION>,
-            false /* isVarLength */));
-        return definitions;
+            ScalarFunction::UnaryStringExecFunction<common::ku_string_t, common::ku_string_t,
+                OPERATION>));
+        return functionSet;
     }
 };
 
-struct ArrayExtractVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct ArrayExtractFunction {
+    static constexpr const char* name = "ARRAY_EXTRACT";
+
+    static function_set getFunctionSet();
 };
 
-struct ConcatVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct ConcatFunction : public VectorStringFunction {
+    static constexpr const char* name = "CONCAT";
+
+    static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
+        common::ValueVector& result, void* /*dataPtr*/);
+
+    static function_set getFunctionSet();
 };
 
-struct ContainsVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct ContainsFunction : public VectorStringFunction {
+    static constexpr const char* name = "CONTAINS";
+
+    static function_set getFunctionSet();
 };
 
-struct EndsWithVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct EndsWithFunction : public VectorStringFunction {
+    static constexpr const char* name = "ENDS_WITH";
+
+    static function_set getFunctionSet();
 };
 
-struct LeftVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct SuffixFunction {
+    using alias = EndsWithFunction;
+
+    static constexpr const char* name = "SUFFIX";
 };
 
-struct LengthVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct LeftFunction : public VectorStringFunction {
+    static constexpr const char* name = "LEFT";
+
+    static function_set getFunctionSet();
 };
 
-struct LowerVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Lower>(common::LOWER_FUNC_NAME);
+struct LowerFunction : public VectorStringFunction {
+    static constexpr const char* name = "LOWER";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Lower>(name); }
+};
+
+struct LcaseFunction {
+    using alias = LowerFunction;
+
+    static constexpr const char* name = "LCASE";
+};
+
+struct LpadFunction : public VectorStringFunction {
+    static constexpr const char* name = "LPAD";
+
+    static function_set getFunctionSet();
+};
+
+struct LtrimFunction : public VectorStringFunction {
+    static constexpr const char* name = "LTRIM";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Ltrim>(name); }
+};
+
+struct RepeatFunction : public VectorStringFunction {
+    static constexpr const char* name = "REPEAT";
+
+    static function_set getFunctionSet();
+};
+
+struct ReverseFunction : public VectorStringFunction {
+    static constexpr const char* name = "REVERSE";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Reverse>(name); }
+};
+
+struct RightFunction : public VectorStringFunction {
+    static constexpr const char* name = "RIGHT";
+
+    static function_set getFunctionSet();
+};
+
+struct RpadFunction : public VectorStringFunction {
+    static constexpr const char* name = "RPAD";
+
+    static function_set getFunctionSet();
+};
+
+struct RtrimFunction : public VectorStringFunction {
+    static constexpr const char* name = "RTRIM";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Rtrim>(name); }
+};
+
+struct StartsWithFunction : public VectorStringFunction {
+    static constexpr const char* name = "STARTS_WITH";
+
+    static function_set getFunctionSet();
+};
+
+struct PrefixFunction {
+    using alias = StartsWithFunction;
+
+    static constexpr const char* name = "PREFIX";
+};
+
+struct SubStrFunction : public VectorStringFunction {
+    static constexpr const char* name = "SUBSTR";
+
+    static function_set getFunctionSet();
+};
+
+struct SubstringFunction {
+    using alias = SubStrFunction;
+
+    static constexpr const char* name = "SUBSTRING";
+};
+
+struct TrimFunction : public VectorStringFunction {
+    static constexpr const char* name = "TRIM";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Trim>(name); }
+};
+
+struct UpperFunction : public VectorStringFunction {
+    static constexpr const char* name = "UPPER";
+
+    static inline function_set getFunctionSet() { return getUnaryStrFunction<Upper>(name); }
+};
+
+struct UCaseFunction {
+    using alias = UpperFunction;
+
+    static constexpr const char* name = "UCASE";
+};
+
+struct RegexpFullMatchFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_FULL_MATCH";
+
+    static function_set getFunctionSet();
+};
+
+struct RegexpMatchesFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_MATCHES";
+
+    static function_set getFunctionSet();
+};
+
+struct RegexpReplaceFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_REPLACE";
+    static constexpr const char* GLOBAL_REPLACE_OPTION = "g";
+    enum class RegexReplaceOption : uint8_t { GLOBAL = 0, FIRST_OCCUR = 1 };
+
+    static function_set getFunctionSet();
+};
+
+struct RegexReplaceBindData : public FunctionBindData {
+    RegexpReplaceFunction::RegexReplaceOption option;
+
+    RegexReplaceBindData(std::vector<common::LogicalType> paramTypes,
+        common::LogicalType resultType, RegexpReplaceFunction::RegexReplaceOption option)
+        : FunctionBindData{std::move(paramTypes), std::move(resultType)}, option{option} {}
+
+    std::unique_ptr<FunctionBindData> copy() const override {
+        return std::make_unique<RegexReplaceBindData>(copyVector(paramTypes), resultType.copy(),
+            option);
     }
 };
 
-struct LpadVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct RegexpExtractFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_EXTRACT";
+
+    static function_set getFunctionSet();
 };
 
-struct LtrimVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Ltrim>(common::LTRIM_FUNC_NAME);
-    }
+struct RegexpExtractAllFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_EXTRACT_ALL";
+
+    static function_set getFunctionSet();
 };
 
-struct RepeatVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct RegexpSplitToArrayFunction : public VectorStringFunction {
+    static constexpr const char* name = "REGEXP_SPLIT_TO_ARRAY";
+
+    static function_set getFunctionSet();
 };
 
-struct ReverseVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Reverse>(common::REVERSE_FUNC_NAME);
-    }
+struct LevenshteinFunction : public VectorStringFunction {
+    static constexpr const char* name = "LEVENSHTEIN";
+
+    static function_set getFunctionSet();
 };
 
-struct RightVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct InitCapFunction : public VectorStringFunction {
+    static constexpr const char* name = "INITCAP";
+
+    static function_set getFunctionSet();
 };
 
-struct RpadVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct StringSplitFunction {
+    static constexpr const char* name = "STRING_SPLIT";
+
+    static function_set getFunctionSet();
 };
 
-struct RtrimVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Rtrim>(common::RTRIM_FUNC_NAME);
-    }
+struct StrSplitFunction {
+    using alias = StringSplitFunction;
+
+    static constexpr const char* name = "STR_SPLIT";
 };
 
-struct StartsWithVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
+struct StringToArrayFunction {
+    using alias = StringSplitFunction;
+
+    static constexpr const char* name = "STRING_TO_ARRAY";
 };
 
-struct SubStrVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-};
+struct SplitPartFunction {
+    static constexpr const char* name = "SPLIT_PART";
 
-struct TrimVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Trim>(common::TRIM_FUNC_NAME);
-    }
-};
-
-struct UpperVectorFunction : public VectorStringFunction {
-    static inline vector_function_definitions getDefinitions() {
-        return getUnaryStrFunctionDefintion<Upper>(common::UPPER_FUNC_NAME);
-    }
-};
-
-struct RegexpFullMatchVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-};
-
-struct RegexpMatchesVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-};
-
-struct RegexpReplaceVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-};
-
-struct RegexpExtractVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-};
-
-struct RegexpExtractAllVectorFunction : public VectorStringFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+    static function_set getFunctionSet();
 };
 
 } // namespace function

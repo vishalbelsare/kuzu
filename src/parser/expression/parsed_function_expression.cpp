@@ -1,23 +1,25 @@
 #include "parser/expression/parsed_function_expression.h"
 
-#include "common/ser_deser.h"
+#include "common/serializer/deserializer.h"
+#include "common/serializer/serializer.h"
+
+using namespace kuzu::common;
 
 namespace kuzu {
 namespace parser {
 
 std::unique_ptr<ParsedFunctionExpression> ParsedFunctionExpression::deserialize(
-    common::FileInfo* fileInfo, uint64_t& offset) {
-    bool isDistinct;
-    common::SerDeser::deserializeValue(isDistinct, fileInfo, offset);
+    Deserializer& deserializer) {
+    bool isDistinct = false;
+    deserializer.deserializeValue(isDistinct);
     std::string functionName;
-    common::SerDeser::deserializeValue(functionName, fileInfo, offset);
-    return std::make_unique<ParsedFunctionExpression>(isDistinct, std::move(functionName));
+    deserializer.deserializeValue(functionName);
+    return std::make_unique<ParsedFunctionExpression>(std::move(functionName), isDistinct);
 }
 
-void ParsedFunctionExpression::serializeInternal(
-    common::FileInfo* fileInfo, uint64_t& offset) const {
-    common::SerDeser::serializeValue(isDistinct, fileInfo, offset);
-    common::SerDeser::serializeValue(functionName, fileInfo, offset);
+void ParsedFunctionExpression::serializeInternal(Serializer& serializer) const {
+    serializer.serializeValue(isDistinct);
+    serializer.serializeValue(functionName);
 }
 
 } // namespace parser

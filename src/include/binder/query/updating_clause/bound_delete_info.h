@@ -1,47 +1,27 @@
 #pragma once
 
-#include "binder/expression/rel_expression.h"
-#include "update_table_type.h"
+#include "binder/expression/expression.h"
+#include "common/enums/delete_type.h"
+#include "common/enums/table_type.h"
 
 namespace kuzu {
 namespace binder {
 
-struct ExtraDeleteInfo {
-    virtual ~ExtraDeleteInfo() = default;
-    virtual std::unique_ptr<ExtraDeleteInfo> copy() const = 0;
-};
-
-struct ExtraDeleteNodeInfo : public ExtraDeleteInfo {
-    std::shared_ptr<Expression> primaryKey;
-
-    explicit ExtraDeleteNodeInfo(std::shared_ptr<Expression> primaryKey)
-        : primaryKey{std::move(primaryKey)} {}
-    ExtraDeleteNodeInfo(const ExtraDeleteNodeInfo& other) : primaryKey{other.primaryKey} {}
-
-    inline std::unique_ptr<ExtraDeleteInfo> copy() const final {
-        return std::make_unique<ExtraDeleteNodeInfo>(*this);
-    }
-};
-
 struct BoundDeleteInfo {
-    UpdateTableType updateTableType;
-    std::shared_ptr<Expression> nodeOrRel;
-    std::unique_ptr<ExtraDeleteInfo> extraInfo;
+    common::DeleteNodeType deleteType;
+    common::TableType tableType;
+    std::shared_ptr<Expression> pattern;
 
-    BoundDeleteInfo(UpdateTableType updateTableType, std::shared_ptr<Expression> nodeOrRel,
-        std::unique_ptr<ExtraDeleteInfo> extraInfo)
-        : updateTableType{updateTableType}, nodeOrRel{std::move(nodeOrRel)}, extraInfo{std::move(
-                                                                                 extraInfo)} {}
+    BoundDeleteInfo(common::DeleteNodeType deleteType, common::TableType tableType,
+        std::shared_ptr<Expression> pattern)
+        : deleteType{deleteType}, tableType{tableType}, pattern{std::move(pattern)} {}
+    EXPLICIT_COPY_DEFAULT_MOVE(BoundDeleteInfo);
+
+    std::string toString() const { return "Delete " + pattern->toString(); }
+
+private:
     BoundDeleteInfo(const BoundDeleteInfo& other)
-        : updateTableType{other.updateTableType}, nodeOrRel{other.nodeOrRel} {
-        if (other.extraInfo) {
-            extraInfo = other.extraInfo->copy();
-        }
-    }
-
-    inline std::unique_ptr<BoundDeleteInfo> copy() {
-        return std::make_unique<BoundDeleteInfo>(*this);
-    }
+        : deleteType{other.deleteType}, tableType{other.tableType}, pattern{other.pattern} {}
 };
 
 } // namespace binder

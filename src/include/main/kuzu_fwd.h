@@ -1,10 +1,12 @@
+#pragma once
+
 #include <cstdint>
 
 namespace kuzu {
 
 namespace testing {
-class ApiTest;
 class BaseGraphTest;
+class PrivateGraphTest;
 class TestHelper;
 class TestRunner;
 class TinySnbDDLTest;
@@ -28,6 +30,8 @@ class Catalog;
 namespace common {
 enum class StatementType : uint8_t;
 class Value;
+struct FileInfo;
+class VirtualFileSystem;
 } // namespace common
 
 namespace storage {
@@ -39,6 +43,7 @@ enum class WALReplayMode : uint8_t;
 } // namespace storage
 
 namespace planner {
+class LogicalOperator;
 class LogicalPlan;
 } // namespace planner
 
@@ -52,16 +57,8 @@ class PhysicalPlan;
 
 namespace transaction {
 class Transaction;
-enum class TransactionType : uint8_t;
-enum class TransactionAction : uint8_t;
 class TransactionManager;
+class TransactionContext;
 } // namespace transaction
 
 } // namespace kuzu
-
-namespace spdlog {
-class logger;
-namespace level {
-enum level_enum : int;
-} // namespace level
-} // namespace spdlog

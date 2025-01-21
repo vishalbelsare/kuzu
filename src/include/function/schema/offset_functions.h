@@ -1,14 +1,13 @@
 #pragma once
 
-#include "common/type_utils.h"
+#include "common/types/types.h"
 
 namespace kuzu {
 namespace function {
 
 struct Offset {
-    static inline void operation(common::internalID_t& input, int64_t& result) {
-        result = input.offset;
-    }
+
+    static void operation(common::internalID_t& input, int64_t& result) { result = input.offset; }
 };
 
 } // namespace function

@@ -1,7 +1,6 @@
 #pragma once
 
-#include "node_expression.h"
-#include "rel_expression.h"
+#include "binder/expression/expression.h"
 
 namespace kuzu {
 namespace binder {
@@ -9,21 +8,22 @@ namespace binder {
 class PathExpression : public Expression {
 public:
     PathExpression(common::LogicalType dataType, std::string uniqueName, std::string variableName,
-        std::shared_ptr<NodeExpression> node, std::shared_ptr<RelExpression> rel,
-        expression_vector children)
-        : Expression{common::PATH, std::move(dataType), std::move(children), std::move(uniqueName)},
-          variableName{std::move(variableName)}, node{std::move(node)}, rel{std::move(rel)} {}
+        common::LogicalType nodeType, common::LogicalType relType, expression_vector children)
+        : Expression{common::ExpressionType::PATH, std::move(dataType), std::move(children),
+              std::move(uniqueName)},
+          variableName{std::move(variableName)}, nodeType{std::move(nodeType)},
+          relType{std::move(relType)} {}
 
     inline std::string getVariableName() const { return variableName; }
-    inline std::shared_ptr<NodeExpression> getNode() const { return node; }
-    inline std::shared_ptr<RelExpression> getRel() const { return rel; }
+    inline const common::LogicalType& getNodeType() const { return nodeType; }
+    inline const common::LogicalType& getRelType() const { return relType; }
 
-    inline std::string toString() const override { return variableName; }
+    inline std::string toStringInternal() const final { return variableName; }
 
 private:
     std::string variableName;
-    std::shared_ptr<NodeExpression> node;
-    std::shared_ptr<RelExpression> rel;
+    common::LogicalType nodeType;
+    common::LogicalType relType;
 };
 
 } // namespace binder

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <cassert>
-#include <cstring>
-
+#include "common/exception/runtime.h"
+#include "common/type_utils.h"
 #include "common/types/ku_string.h"
 #include "common/vector/value_vector.h"
 #include "function/string/functions/array_extract_function.h"
@@ -12,31 +11,37 @@ namespace function {
 
 struct ListExtract {
 public:
-    template<typename T>
-    static inline void setValue(T& src, T& dest, common::ValueVector& resultValueVector) {
-        dest = src;
-    }
-
     // Note: this function takes in a 1-based position (The index of the first value in the list
     // is 1).
     template<typename T>
     static inline void operation(common::list_entry_t& listEntry, int64_t pos, T& result,
-        common::ValueVector& listVector, common::ValueVector& posVector,
-        common::ValueVector& resultVector) {
-        auto uint64Pos = (uint64_t)pos;
-        if (listEntry.size < uint64Pos) {
-            throw common::RuntimeException("list_extract(list, index): index=" +
-                                           common::TypeUtils::toString(pos) + " is out of range.");
+        common::ValueVector& listVector, common::ValueVector& /*posVector*/,
+        common::ValueVector& resultVector, uint64_t resPos) {
+        if (pos == 0) {
+            throw common::RuntimeException("List extract takes 1-based position.");
+        }
+        if ((pos > 0 && pos > listEntry.size) || (pos < 0 && pos < -(int64_t)listEntry.size)) {
+            throw common::RuntimeException(
+                common::stringFormat("list_extract(list, index): index={} is out of range.",
+                    common::TypeUtils::toString(pos)));
+        }
+        if (pos > 0) {
+            pos--;
+        } else {
+            pos = listEntry.size + pos;
         }
         auto listDataVector = common::ListVector::getDataVector(&listVector);
-        auto listValues =
-            common::ListVector::getListValuesWithOffset(&listVector, listEntry, pos - 1);
-        resultVector.copyFromVectorData(
-            reinterpret_cast<uint8_t*>(&result), listDataVector, listValues);
+        resultVector.setNull(resPos, listDataVector->isNull(listEntry.offset + pos));
+        if (!resultVector.isNull(resPos)) {
+            auto listValues =
+                common::ListVector::getListValuesWithOffset(&listVector, listEntry, pos);
+            resultVector.copyFromVectorData(reinterpret_cast<uint8_t*>(&result), listDataVector,
+                listValues);
+        }
     }
 
-    static inline void operation(
-        common::ku_string_t& str, int64_t& idx, common::ku_string_t& result) {
+    static inline void operation(common::ku_string_t& str, int64_t& idx,
+        common::ku_string_t& result) {
         if (str.len < idx) {
             result.set("", 0);
         } else {
@@ -44,12 +49,6 @@ public:
         }
     }
 };
-
-template<>
-inline void ListExtract::setValue(
-    common::ku_string_t& src, common::ku_string_t& dest, common::ValueVector& resultValueVector) {
-    common::StringVector::addString(&resultValueVector, dest, src);
-}
 
 } // namespace function
 } // namespace kuzu

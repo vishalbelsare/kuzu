@@ -3,6 +3,7 @@
 #include <memory>
 #include <vector>
 
+#include "common/copy_constructors.h"
 #include "common/data_chunk/data_chunk_state.h"
 #include "common/vector/value_vector.h"
 
@@ -16,21 +17,27 @@ namespace common {
 // A data chunk further contains a DataChunkState, which keeps the data chunk's size, selector, and
 // currIdx (used when flattening and implies the value vector only contains the elements at currIdx
 // of each value vector).
-class DataChunk {
-
+class KUZU_API DataChunk {
 public:
+    DataChunk() : DataChunk{0} {}
     explicit DataChunk(uint32_t numValueVectors)
         : DataChunk(numValueVectors, std::make_shared<DataChunkState>()){};
 
     DataChunk(uint32_t numValueVectors, const std::shared_ptr<DataChunkState>& state)
         : valueVectors(numValueVectors), state{state} {};
+    DELETE_COPY_DEFAULT_MOVE(DataChunk);
 
     void insert(uint32_t pos, std::shared_ptr<ValueVector> valueVector);
 
+    void resetAuxiliaryBuffer();
+
     inline uint32_t getNumValueVectors() const { return valueVectors.size(); }
 
-    inline std::shared_ptr<ValueVector> getValueVector(uint64_t valueVectorPos) {
-        return valueVectors[valueVectorPos];
+    inline const ValueVector& getValueVector(uint64_t valueVectorPos) const {
+        return *valueVectors[valueVectorPos];
+    }
+    inline ValueVector& getValueVectorMutable(uint64_t valueVectorPos) const {
+        return *valueVectors[valueVectorPos];
     }
 
 public:

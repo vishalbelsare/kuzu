@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cassert>
-#include <cstring>
-
 #include "base_str_function.h"
 #include "common/types/ku_string.h"
 
@@ -22,7 +19,9 @@ struct Ltrim {
                 break;
             }
         }
-        memcpy(data, data + counter, len - counter);
+        for (uint32_t i = 0; i < len - counter; i++) {
+            data[i] = data[i + counter];
+        }
         return len - counter;
     }
 };

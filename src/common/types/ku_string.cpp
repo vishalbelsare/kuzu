@@ -3,6 +3,15 @@
 namespace kuzu {
 namespace common {
 
+ku_string_t::ku_string_t(const char* value, uint64_t length) : len(length), prefix{} {
+    if (isShortString(length)) {
+        memcpy(prefix, value, length);
+        return;
+    }
+    overflowPtr = (uint64_t)(value);
+    memcpy(prefix, value, PREFIX_LENGTH);
+}
+
 void ku_string_t::set(const std::string& value) {
     set(value.data(), value.length());
 }
@@ -28,10 +37,14 @@ std::string ku_string_t::getAsShortString() const {
 }
 
 std::string ku_string_t::getAsString() const {
+    return std::string(getAsStringView());
+}
+
+std::string_view ku_string_t::getAsStringView() const {
     if (len <= SHORT_STR_LENGTH) {
-        return getAsShortString();
+        return std::string_view((char*)prefix, len);
     } else {
-        return std::string(reinterpret_cast<char*>(overflowPtr), len);
+        return std::string_view(reinterpret_cast<char*>(overflowPtr), len);
     }
 }
 

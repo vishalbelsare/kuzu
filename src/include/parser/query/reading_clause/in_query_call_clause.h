@@ -6,20 +6,17 @@
 namespace kuzu {
 namespace parser {
 
-class InQueryCallClause : public ReadingClause {
+class InQueryCallClause final : public ReadingClause {
+    static constexpr common::ClauseType clauseType_ = common::ClauseType::IN_QUERY_CALL;
+
 public:
-    InQueryCallClause(
-        std::string optionName, std::vector<std::unique_ptr<ParsedExpression>> parameters)
-        : ReadingClause{common::ClauseType::InQueryCall}, funcName{std::move(optionName)},
-          parameters{std::move(parameters)} {}
+    explicit InQueryCallClause(std::unique_ptr<ParsedExpression> functionExpression)
+        : ReadingClause{clauseType_}, functionExpression{std::move(functionExpression)} {}
 
-    inline std::string getFuncName() const { return funcName; }
-
-    std::vector<ParsedExpression*> getParameters() const;
+    const ParsedExpression* getFunctionExpression() const { return functionExpression.get(); }
 
 private:
-    std::string funcName;
-    std::vector<std::unique_ptr<ParsedExpression>> parameters;
+    std::unique_ptr<ParsedExpression> functionExpression;
 };
 
 } // namespace parser

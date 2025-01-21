@@ -1,119 +1,112 @@
 #pragma once
 
-#include "common/vector/value_vector.h"
-#include "function/function_definition.h"
-#include "main/client_context.h"
+#include "common/data_chunk/data_chunk.h"
+#include "function.h"
 
 namespace kuzu {
+namespace parser {
+class ParsedExpression;
+}
 
-namespace catalog {
-class CatalogContent;
-} // namespace catalog
+namespace processor {
+struct ExecutionContext;
+}
 
 namespace function {
 
-struct TableFuncBindData;
 struct TableFuncBindInput;
+struct TableFuncBindData;
 
-using table_func_t = std::function<void(std::pair<common::offset_t, common::offset_t>,
-    function::TableFuncBindData*, std::vector<common::ValueVector*>)>;
-using table_bind_func_t = std::function<std::unique_ptr<TableFuncBindData>(
-    main::ClientContext* context, TableFuncBindInput input, catalog::CatalogContent* catalog)>;
+struct KUZU_API TableFuncSharedState {
+    virtual ~TableFuncSharedState() = default;
 
-struct TableFuncBindData {
-    std::vector<common::LogicalType> returnTypes;
-    std::vector<std::string> returnColumnNames;
-    common::offset_t maxOffset;
-
-    TableFuncBindData(std::vector<common::LogicalType> returnTypes,
-        std::vector<std::string> returnColumnNames, common::offset_t maxOffset)
-        : returnTypes{std::move(returnTypes)},
-          returnColumnNames{std::move(returnColumnNames)}, maxOffset{maxOffset} {}
-
-    virtual ~TableFuncBindData() = default;
-
-    virtual std::unique_ptr<TableFuncBindData> copy() {
-        return std::make_unique<TableFuncBindData>(returnTypes, returnColumnNames, maxOffset);
+    template<class TARGET>
+    TARGET* ptrCast() {
+        return common::ku_dynamic_cast<TARGET*>(this);
     }
 };
 
-struct TableFuncBindInput {
-    explicit TableFuncBindInput(std::vector<common::Value> inputs) : inputs{std::move(inputs)} {}
-    std::vector<common::Value> inputs;
-};
+struct TableFuncLocalState {
+    virtual ~TableFuncLocalState() = default;
 
-struct TableFunctionDefinition {
-    std::string name;
-    table_func_t tableFunc;
-    table_bind_func_t bindFunc;
-
-    TableFunctionDefinition(std::string name, table_func_t tableFunc, table_bind_func_t bindFunc)
-        : name{std::move(name)}, tableFunc{std::move(tableFunc)}, bindFunc{std::move(bindFunc)} {}
-};
-
-struct TableInfoBindData : public TableFuncBindData {
-    catalog::TableSchema* tableSchema;
-
-    TableInfoBindData(catalog::TableSchema* tableSchema,
-        std::vector<common::LogicalType> returnTypes, std::vector<std::string> returnColumnNames,
-        common::offset_t maxOffset)
-        : tableSchema{tableSchema}, TableFuncBindData{std::move(returnTypes),
-                                        std::move(returnColumnNames), maxOffset} {}
-
-    std::unique_ptr<TableFuncBindData> copy() override {
-        return std::make_unique<TableInfoBindData>(
-            tableSchema, returnTypes, returnColumnNames, maxOffset);
+    template<class TARGET>
+    TARGET* ptrCast() {
+        return common::ku_dynamic_cast<TARGET*>(this);
     }
 };
 
-struct TableInfoFunction {
-    inline static std::unique_ptr<TableFunctionDefinition> getDefinitions() {
-        return std::make_unique<TableFunctionDefinition>("table_info", tableFunc, bindFunc);
-    }
+struct TableFuncInput {
+    TableFuncBindData* bindData;
+    TableFuncLocalState* localState;
+    TableFuncSharedState* sharedState;
+    processor::ExecutionContext* context;
 
-    static void tableFunc(std::pair<common::offset_t, common::offset_t> morsel,
-        function::TableFuncBindData* bindData, std::vector<common::ValueVector*> outputVectors);
-
-    static std::unique_ptr<TableInfoBindData> bindFunc(
-        main::ClientContext* context, TableFuncBindInput input, catalog::CatalogContent* catalog);
+    TableFuncInput() = default;
+    TableFuncInput(TableFuncBindData* bindData, TableFuncLocalState* localState,
+        TableFuncSharedState* sharedState, processor::ExecutionContext* context)
+        : bindData{bindData}, localState{localState}, sharedState{sharedState}, context{context} {}
+    DELETE_COPY_DEFAULT_MOVE(TableFuncInput);
 };
 
-struct DBVersionFunction {
-    inline static std::unique_ptr<TableFunctionDefinition> getDefinitions() {
-        return std::make_unique<TableFunctionDefinition>("db_version", tableFunc, bindFunc);
-    }
+// We are in the middle of merging different scan operators into table function. But they organize
+// output vectors in different ways. E.g.
+// - Call functions and scan file functions put all vectors into single data chunk
+// - Factorized table scan instead
+// We introduce this as a temporary solution to unify the interface. In the long term, we should aim
+// to use ResultSet as TableFuncOutput.
+struct TableFuncOutput {
+    common::DataChunk dataChunk;
+    std::vector<common::ValueVector*> vectors;
 
-    static void tableFunc(std::pair<common::offset_t, common::offset_t> morsel,
-        function::TableFuncBindData* bindData, std::vector<common::ValueVector*> outputVectors);
-
-    static std::unique_ptr<TableFuncBindData> bindFunc(
-        main::ClientContext* context, TableFuncBindInput input, catalog::CatalogContent* catalog);
+    TableFuncOutput() = default;
+    DELETE_COPY_DEFAULT_MOVE(TableFuncOutput);
 };
 
-struct CurrentSettingBindData : public TableFuncBindData {
-    std::string result;
+struct TableFunctionInitInput {
+    TableFuncBindData* bindData;
+    uint64_t queryID;
 
-    CurrentSettingBindData(std::string result, std::vector<common::LogicalType> returnTypes,
-        std::vector<std::string> returnColumnNames, common::offset_t maxOffset)
-        : result{std::move(result)}, TableFuncBindData{std::move(returnTypes),
-                                         std::move(returnColumnNames), maxOffset} {}
+    explicit TableFunctionInitInput(TableFuncBindData* bindData, uint64_t queryID)
+        : bindData{bindData}, queryID(queryID) {}
 
-    std::unique_ptr<TableFuncBindData> copy() override {
-        return std::make_unique<CurrentSettingBindData>(
-            result, returnTypes, returnColumnNames, maxOffset);
-    }
+    virtual ~TableFunctionInitInput() = default;
 };
 
-struct CurrentSettingFunction {
-    inline static std::unique_ptr<TableFunctionDefinition> getDefinitions() {
-        return std::make_unique<TableFunctionDefinition>("current_setting", tableFunc, bindFunc);
+using table_func_bind_t = std::function<std::unique_ptr<TableFuncBindData>(main::ClientContext*,
+    const TableFuncBindInput*)>;
+using table_func_t = std::function<common::offset_t(const TableFuncInput&, TableFuncOutput&)>;
+using table_func_init_shared_t =
+    std::function<std::unique_ptr<TableFuncSharedState>(const TableFunctionInitInput&)>;
+using table_func_init_local_t = std::function<std::unique_ptr<TableFuncLocalState>(
+    const TableFunctionInitInput&, TableFuncSharedState*, storage::MemoryManager*)>;
+using table_func_can_parallel_t = std::function<bool()>;
+using table_func_progress_t = std::function<double(TableFuncSharedState* sharedState)>;
+using table_func_finalize_t =
+    std::function<void(const processor::ExecutionContext*, TableFuncSharedState*)>;
+using table_func_rewrite_t =
+    std::function<std::string(main::ClientContext&, const TableFuncBindData& bindData)>;
+
+struct KUZU_API TableFunction : Function {
+    table_func_t tableFunc = nullptr;
+    table_func_bind_t bindFunc = nullptr;
+    table_func_init_shared_t initSharedStateFunc = nullptr;
+    table_func_init_local_t initLocalStateFunc = nullptr;
+    table_func_can_parallel_t canParallelFunc = [] { return true; };
+    table_func_progress_t progressFunc = [](TableFuncSharedState*) { return 0.0; };
+    table_func_finalize_t finalizeFunc = [](auto, auto) {};
+    table_func_rewrite_t rewriteFunc = nullptr;
+
+    TableFunction() {}
+    TableFunction(std::string name, std::vector<common::LogicalTypeID> inputTypes)
+        : Function{std::move(name), std::move(inputTypes)} {}
+
+    std::string signatureToString() const override {
+        return common::LogicalTypeUtils::toString(parameterTypeIDs);
     }
 
-    static void tableFunc(std::pair<common::offset_t, common::offset_t> morsel,
-        function::TableFuncBindData* bindData, std::vector<common::ValueVector*> outputVectors);
-
-    static std::unique_ptr<TableFuncBindData> bindFunc(
-        main::ClientContext* context, TableFuncBindInput input, catalog::CatalogContent* catalog);
+    virtual std::unique_ptr<TableFunction> copy() const {
+        return std::make_unique<TableFunction>(*this);
+    }
 };
 
 } // namespace function

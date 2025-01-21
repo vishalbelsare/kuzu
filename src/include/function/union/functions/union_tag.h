@@ -9,9 +9,8 @@ struct UnionTag {
     static void operation(common::union_entry_t& unionValue, common::ku_string_t& tag,
         common::ValueVector& unionVector, common::ValueVector& tagVector) {
         auto tagIdxVector = common::UnionVector::getTagVector(&unionVector);
-        auto tagIdx = tagIdxVector->getValue<common::union_field_idx_t>(
-            tagIdxVector->state->selVector->selectedPositions[unionValue.pos]);
-        auto tagName = common::UnionType::getFieldName(&unionVector.dataType, tagIdx);
+        auto tagIdx = tagIdxVector->getValue<common::union_field_idx_t>(unionValue.entry.pos);
+        auto tagName = common::UnionType::getFieldName(unionVector.dataType, tagIdx);
         if (tagName.length() > common::ku_string_t::SHORT_STR_LENGTH) {
             tag.overflowPtr =
                 reinterpret_cast<uint64_t>(common::StringVector::getInMemOverflowBuffer(&tagVector)

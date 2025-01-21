@@ -1,10 +1,11 @@
 add_library(kuzu_planner_join_order
         OBJECT
-        append_extend.cpp
-        append_join.cpp
         cardinality_estimator.cpp
         cost_model.cpp
-        join_order_util.cpp)
+        join_order_util.cpp
+        join_plan_solver.cpp
+        join_tree.cpp
+        join_tree_constructor.cpp)
 
 set(ALL_OBJECT_FILES
         ${ALL_OBJECT_FILES} $<TARGET_OBJECTS:kuzu_planner_join_order>

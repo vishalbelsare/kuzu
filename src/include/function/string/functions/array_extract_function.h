@@ -1,25 +1,23 @@
 #pragma once
 
-#include <cassert>
 #include <cstring>
 
 #include "common/types/ku_string.h"
-#include "length_function.h"
-#include "substr_function.h"
+#include "function/list/functions/list_len_function.h"
 
 namespace kuzu {
 namespace function {
 
 struct ArrayExtract {
-    static inline void operation(
-        common::ku_string_t& str, int64_t& idx, common::ku_string_t& result) {
+    static inline void operation(common::ku_string_t& str, int64_t& idx,
+        common::ku_string_t& result) {
         if (idx == 0) {
             result.len = 0;
             return;
         }
         auto stringVal = str.getAsString();
-        int64_t strLen;
-        Length::operation(str, strLen);
+        int64_t strLen = 0;
+        ListLen::operation(str, strLen);
         auto idxPos = idx > 0 ? std::min(idx, strLen) : std::max(strLen + idx, (int64_t)0) + 1;
         auto startPos = idxPos - 1;
         auto endPos = startPos + 1;
@@ -34,8 +32,8 @@ struct ArrayExtract {
             copySubstr(str, idxPos, 1 /* length */, result, isAscii);
         } else {
             int64_t characterCount = 0, startBytePos = 0, endBytePos = 0;
-            kuzu::utf8proc::utf8proc_grapheme_callback(
-                stringVal.c_str(), stringVal.size(), [&](int64_t gstart, int64_t gend) {
+            kuzu::utf8proc::utf8proc_grapheme_callback(stringVal.c_str(), stringVal.size(),
+                [&](int64_t gstart, int64_t /*gend*/) {
                     if (characterCount == startPos) {
                         startBytePos = gstart;
                     } else if (characterCount == endPos) {

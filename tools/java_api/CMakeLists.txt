@@ -1,5 +1,3 @@
-cmake_minimum_required (VERSION 3.11)
-
 set(CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS TRUE)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -20,8 +18,8 @@ include(UseJava)
 file(GLOB JAVA_SRC_FILES src/main/java/com/kuzudb/*.java)
 
 set(CMAKE_JAVA_COMPILE_FLAGS -source 1.8 -target 1.8 -encoding utf-8)
-add_jar(kuzu_java ${JAVA_SRC_FILES} 
-    OUTPUT_DIR "${PROJECT_SOURCE_DIR}/build" 
+add_jar(kuzu_java ${JAVA_SRC_FILES}
+    OUTPUT_DIR "${PROJECT_SOURCE_DIR}/build"
     GENERATE_NATIVE_HEADERS kuzu_native_header)
 get_target_property(_jarFile kuzu_java JAR_FILE)
 get_target_property(_classDir kuzu_java CLASSDIR)
@@ -46,7 +44,7 @@ set_target_properties(kuzu_java_native
 
 add_custom_command(OUTPUT dummy_jar_target
     DEPENDS kuzu_java_native kuzu_java
-    COMMAND ${Java_JAR_EXECUTABLE} uf ${_jarFile} -C 
+    COMMAND ${Java_JAR_EXECUTABLE} uf ${_jarFile} -C
             $<TARGET_FILE_DIR:kuzu_java_native> $<TARGET_FILE_NAME:kuzu_java_native>)
 
 add_custom_target(kuzu_java_api ALL DEPENDS dummy_jar_target)

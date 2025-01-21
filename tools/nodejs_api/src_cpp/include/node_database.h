@@ -13,17 +13,24 @@ class NodeDatabase : public Napi::ObjectWrap<NodeDatabase> {
 
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
-    NodeDatabase(const Napi::CallbackInfo& info);
-    ~NodeDatabase() = default;
+    explicit NodeDatabase(const Napi::CallbackInfo& info);
+    ~NodeDatabase() override = default;
 
 private:
     Napi::Value InitAsync(const Napi::CallbackInfo& info);
     void InitCppDatabase();
-    void setLoggingLevel(const Napi::CallbackInfo& info);
+    void Close(const Napi::CallbackInfo& info);
+    static Napi::Value GetVersion(const Napi::CallbackInfo& info);
+    static Napi::Value GetStorageVersion(const Napi::CallbackInfo& info);
 
 private:
     std::string databasePath;
     size_t bufferPoolSize;
+    bool enableCompression;
+    bool readOnly;
+    uint64_t maxDBSize;
+    bool autoCheckpoint;
+    int64_t checkpointThreshold;
     std::shared_ptr<Database> database;
 };
 
@@ -32,13 +39,15 @@ public:
     DatabaseInitAsyncWorker(Napi::Function& callback, NodeDatabase* nodeDatabase)
         : AsyncWorker(callback), nodeDatabase(nodeDatabase) {}
 
-    ~DatabaseInitAsyncWorker() = default;
+    ~DatabaseInitAsyncWorker() override = default;
 
     inline void Execute() override {
         try {
             nodeDatabase->InitCppDatabase();
 
-        } catch (const std::exception& exc) { SetError(std::string(exc.what())); }
+        } catch (const std::exception& exc) {
+            SetError(std::string(exc.what()));
+        }
     }
 
     inline void OnOK() override { Callback().Call({Env().Null()}); }

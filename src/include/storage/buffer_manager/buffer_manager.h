@@ -1,70 +1,88 @@
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
-#include "concurrentqueue.h"
-#include "storage/buffer_manager/bm_file_handle.h"
-
-namespace spdlog {
-class logger;
-}
+#include "common/types/types.h"
+#include "storage/buffer_manager/memory_manager.h"
+#include "storage/buffer_manager/page_state.h"
+#include "storage/enums/page_read_policy.h"
+#include "storage/file_handle.h"
 
 namespace kuzu {
+namespace main {
+struct DBConfig;
+};
+namespace common {
+class VirtualFileSystem;
+};
+namespace testing {
+class FlakyBufferManager;
+class CopyTestHelper;
+}; // namespace testing
 namespace storage {
+class ChunkedNodeGroup;
+class Spiller;
 
 // This class keeps state info for pages potentially can be evicted.
 // The page state of a candidate is set to MARKED when it is first enqueued. After enqueued, if the
 // candidate was recently accessed, it is no longer immediately evictable. See the state transition
 // diagram above `BufferManager` class declaration for more details.
 struct EvictionCandidate {
-    // If the candidate is Marked and its version is the same as the one kept inside the candidate,
-    // it is evictable.
-    inline bool isEvictable(uint64_t currPageStateAndVersion) const {
-        return PageState::getState(currPageStateAndVersion) == PageState::MARKED &&
-               PageState::getVersion(currPageStateAndVersion) == pageVersion;
+    friend class EvictionQueue;
+
+    // If the candidate is Marked it is evictable.
+    static bool isEvictable(uint64_t currPageStateAndVersion) {
+        return PageState::getState(currPageStateAndVersion) == PageState::MARKED;
     }
     // If the candidate was recently read optimistically, it is second chance evictable.
-    inline bool isSecondChanceEvictable(uint64_t currPageStateAndVersion) const {
-        return PageState::getState(currPageStateAndVersion) == PageState::UNLOCKED &&
-               PageState::getVersion(currPageStateAndVersion) == pageVersion;
+    static bool isSecondChanceEvictable(uint64_t currPageStateAndVersion) {
+        return PageState::getState(currPageStateAndVersion) == PageState::UNLOCKED;
     }
 
-    BMFileHandle* fileHandle = nullptr;
+    bool operator==(const EvictionCandidate& other) const {
+        return fileIdx == other.fileIdx && pageIdx == other.pageIdx;
+    }
+
+    // Returns false if the candidate was not empty, or if another thread set the value first
+    bool set(const EvictionCandidate& newCandidate);
+
+    uint32_t fileIdx = UINT32_MAX;
     common::page_idx_t pageIdx = common::INVALID_PAGE_IDX;
-    PageState* pageState = nullptr;
-    // The version of the corresponding page at the time the candidate is enqueued.
-    uint64_t pageVersion = -1u;
 };
 
+// A circular buffer queue storing eviction candidates
+// One candidate should be stored for each page currently in memory
 class EvictionQueue {
 public:
-    explicit EvictionQueue(uint64_t capacity) : capacity{capacity} {
-        queue = std::make_unique<moodycamel::ConcurrentQueue<EvictionCandidate>>(capacity);
-    }
+    static constexpr auto EMPTY = EvictionCandidate{UINT32_MAX, common::INVALID_PAGE_IDX};
+    explicit EvictionQueue(uint64_t capacity)
+        : insertCursor{0}, evictionCursor{0}, size{0}, capacity{capacity},
+          data{std::make_unique<std::atomic<EvictionCandidate>[]>(capacity)} {}
 
-    inline void enqueue(EvictionCandidate& candidate) {
-        std::shared_lock sLck{mtx};
-        queue->enqueue(candidate);
-    }
-    inline void enqueue(BMFileHandle* fileHandle, common::page_idx_t pageIdx, PageState* pageState,
-        uint64_t pageVersion) {
-        std::shared_lock sLck{mtx};
-        queue->enqueue(EvictionCandidate{fileHandle, pageIdx, pageState, pageVersion});
-    }
-    inline bool dequeue(EvictionCandidate& candidate) {
-        std::shared_lock sLck{mtx};
-        return queue->try_dequeue(candidate);
-    }
+    bool insert(uint32_t fileIndex, common::page_idx_t pageIndex);
 
-    void removeNonEvictableCandidates();
+    // Produces the next non-empty candidate to be tried for eviction
+    // Note that it is still possible (though unlikely) for another thread
+    // to evict this candidate, so it is not guaranteed to be empty
+    // The PageState should be locked, and then the atomic checked against the version used
+    // when locking the pagestate to make sure there wasn't a data race
+    std::atomic<EvictionCandidate>* next();
+    void removeCandidatesForFile(uint32_t fileIndex);
+    void clear(std::atomic<EvictionCandidate>& candidate);
 
-    void removeCandidatesForFile(BMFileHandle& fileHandle);
+    uint64_t getSize() const { return size; }
+    uint64_t getCapacity() const { return capacity; }
 
 private:
-    std::shared_mutex mtx;
-    uint64_t capacity;
-    std::unique_ptr<moodycamel::ConcurrentQueue<EvictionCandidate>> queue;
+    std::atomic<uint64_t> insertCursor;
+    std::atomic<uint64_t> evictionCursor;
+    std::atomic<uint64_t> size;
+    const uint64_t capacity;
+    std::unique_ptr<std::atomic<EvictionCandidate>[]> data;
 };
 
 /**
@@ -72,7 +90,7 @@ private:
  * It provides two main functionalities:
  * 1) it provides the high-level functionality to pin() and unpin() the pages of the database files
  * used by storage structures, such as the Column, Lists, or HashIndex in the storage layer, and
- * operates via their BMFileHandle to read/write the page data into/out of one of the frames.
+ * operates via their FileHandle to read/write the page data into/out of one of the frames.
  * 2) it provides optimistic read of pages, which optimistically read unlocked or marked pages
  * without acquiring locks.
  * 3) it supports the MemoryManager (MM) to allocate memory buffers that are not
@@ -98,7 +116,7 @@ private:
  *
  * All accesses to the BM are through a FileHandle. This design is to de-centralize the management
  * of page states from the BM to each file handle itself. Thus each on-disk file should have a
- * unique BMFileHandle, and MM also holds a unique BMFileHandle, which is backed by an temp in-mem
+ * unique FileHandle, and MM also holds a unique FileHandle, which is backed by an temp in-mem
  * file, for all memory buffer allocations
  *
  * To start a Database, users need to specify the max size of the memory usage (`maxSize`) in BM.
@@ -108,9 +126,9 @@ private:
  * 1) For disk pages, BM allocates a virtual memory region of DEFAULT_VM_REGION_MAX_SIZE (defined in
  * constants.h), which is usually much larger than `maxSize`, and is expected to be large enough to
  * contain all disk pages. Each disk page in database files is directly mapped to a unique
- * PAGE_4KB_SIZE frame in the region.
- * 2) For each BMFileHandle backed by a temp in-mem file in MM, BM allocates a virtual memory region
- * of `maxSize` for it. Each memory buffer is mapped to a unique PAGE_256KB_SIZE frame in that
+ * PAGE_SIZE frame in the region.
+ * 2) For each FileHandle backed by a temp in-mem file in MM, BM allocates a virtual memory region
+ * of `maxSize` for it. Each memory buffer is mapped to a unique TEMP_PAGE_SIZE frame in that
  * region. Both disk pages and memory buffers are all managed by the BM to make sure that actually
  * used physical memory doesn't go beyond max size specified by users. Currently, the BM uses a
  * queue based replacement policy and the MADV_DONTNEED hint to explicitly control evictions. See
@@ -161,74 +179,109 @@ private:
  * Umbra's design in his CS 848 course project:
  * https://github.com/fabubaker/kuzu/blob/umbra-bm/final_project_report.pdf.
  */
-
 class BufferManager {
+    friend class testing::FlakyBufferManager;
+    friend class testing::CopyTestHelper;
+
+    friend class FileHandle;
+    friend class MemoryManager;
+
 public:
-    enum class PageReadPolicy : uint8_t { READ_PAGE = 0, DONT_READ_PAGE = 1 };
-
-    explicit BufferManager(uint64_t bufferPoolSize);
-    ~BufferManager() = default;
-
-    uint8_t* pin(BMFileHandle& fileHandle, common::page_idx_t pageIdx,
-        PageReadPolicy pageReadPolicy = PageReadPolicy::READ_PAGE);
-    void optimisticRead(BMFileHandle& fileHandle, common::page_idx_t pageIdx,
-        const std::function<void(uint8_t*)>& func);
-    // The function assumes that the requested page is already pinned.
-    void unpin(BMFileHandle& fileHandle, common::page_idx_t pageIdx);
+    BufferManager(const std::string& databasePath, const std::string& spillToDiskPath,
+        uint64_t bufferPoolSize, uint64_t maxDBSize, common::VirtualFileSystem* vfs, bool readOnly);
+    virtual ~BufferManager();
 
     // Currently, these functions are specifically used only for WAL files.
-    void removeFilePagesFromFrames(BMFileHandle& fileHandle);
-    void flushAllDirtyPagesInFrames(BMFileHandle& fileHandle);
-    void updateFrameIfPageIsInFrameWithoutLock(
-        BMFileHandle& fileHandle, uint8_t* newPage, common::page_idx_t pageIdx);
-    void removePageFromFrameIfNecessary(BMFileHandle& fileHandle, common::page_idx_t pageIdx);
+    void removeFilePagesFromFrames(FileHandle& fileHandle);
+    void updateFrameIfPageIsInFrameWithoutLock(common::file_idx_t fileIdx, const uint8_t* newPage,
+        common::page_idx_t pageIdx);
 
     // For files that are managed by BM, their FileHandles should be created through this function.
-    inline std::unique_ptr<BMFileHandle> getBMFileHandle(const std::string& filePath, uint8_t flags,
-        BMFileHandle::FileVersionedType fileVersionedType,
-        common::PageSizeClass pageSizeClass = common::PAGE_4KB) {
-        return std::make_unique<BMFileHandle>(
-            filePath, flags, this, pageSizeClass, fileVersionedType);
+    FileHandle* getFileHandle(const std::string& filePath, uint8_t flags,
+        common::VirtualFileSystem* vfs, main::ClientContext* context,
+        common::PageSizeClass pageSizeClass = common::REGULAR_PAGE) {
+        fileHandles.emplace_back(std::unique_ptr<FileHandle>(new FileHandle(filePath, flags, this,
+            fileHandles.size(), pageSizeClass, vfs, context)));
+        return fileHandles.back().get();
     }
-    inline common::frame_group_idx_t addNewFrameGroup(common::PageSizeClass pageSizeClass) {
-        return vmRegions[pageSizeClass]->addNewFrameGroup();
+
+    uint64_t getMemoryLimit() const { return bufferPoolSize; }
+    uint64_t getUsedMemory() const { return usedMemory; }
+
+    void getSpillerOrSkip(std::function<void(Spiller&)> func) {
+        if (spiller) {
+            return func(*spiller);
+        }
     }
-    inline void clearEvictionQueue() { evictionQueue = std::make_unique<EvictionQueue>(0); }
+
+    void resetSpiller(std::string spillPath);
+
+protected:
+    // Reclaims used memory until the given size to reserve is available
+    // The specified amount of memory will be recorded as being used
+    virtual bool reserve(uint64_t sizeToReserve);
 
 private:
-    bool claimAFrame(
-        BMFileHandle& fileHandle, common::page_idx_t pageIdx, PageReadPolicy pageReadPolicy);
-    // Return number of bytes freed.
-    uint64_t tryEvictPage(EvictionCandidate& candidate);
-
-    void cachePageIntoFrame(
-        BMFileHandle& fileHandle, common::page_idx_t pageIdx, PageReadPolicy pageReadPolicy);
-    void flushIfDirtyWithoutLock(BMFileHandle& fileHandle, common::page_idx_t pageIdx);
-    void removePageFromFrame(
-        BMFileHandle& fileHandle, common::page_idx_t pageIdx, bool shouldFlush);
-
-    void addToEvictionQueue(
-        BMFileHandle* fileHandle, common::page_idx_t pageIdx, PageState* pageState);
-
-    inline uint64_t reserveUsedMemory(uint64_t size) { return usedMemory.fetch_add(size); }
-    inline uint64_t freeUsedMemory(uint64_t size) { return usedMemory.fetch_sub(size); }
-
-    inline uint8_t* getFrame(BMFileHandle& fileHandle, common::page_idx_t pageIdx) {
+    uint8_t* pin(FileHandle& fileHandle, common::page_idx_t pageIdx,
+        PageReadPolicy pageReadPolicy = PageReadPolicy::READ_PAGE);
+    void optimisticRead(FileHandle& fileHandle, common::page_idx_t pageIdx,
+        const std::function<void(uint8_t*)>& func);
+    // The function assumes that the requested page is already pinned.
+    void unpin(FileHandle& fileHandle, common::page_idx_t pageIdx);
+    uint8_t* getFrame(FileHandle& fileHandle, common::page_idx_t pageIdx) const {
+#if BM_MALLOC
+        return fileHandle.getPageState(pageIdx)->getPage();
+#else
         return vmRegions[fileHandle.getPageSizeClass()]->getFrame(fileHandle.getFrameIdx(pageIdx));
+#endif
     }
-    inline void releaseFrameForPage(BMFileHandle& fileHandle, common::page_idx_t pageIdx) {
+    common::frame_group_idx_t addNewFrameGroup(
+        common::PageSizeClass pageSizeClass [[maybe_unused]]) {
+#if BM_MALLOC
+        return 0;
+#else
+        return vmRegions[pageSizeClass]->addNewFrameGroup();
+#endif
+    }
+    void removePageFromFrameIfNecessary(FileHandle& fileHandle, common::page_idx_t pageIdx);
+
+    static void verifySizeParams(uint64_t bufferPoolSize, uint64_t maxDBSize);
+
+    bool claimAFrame(FileHandle& fileHandle, common::page_idx_t pageIdx,
+        PageReadPolicy pageReadPolicy);
+    // Return number of bytes freed.
+    uint64_t tryEvictPage(std::atomic<EvictionCandidate>& candidate);
+
+    void cachePageIntoFrame(FileHandle& fileHandle, common::page_idx_t pageIdx,
+        PageReadPolicy pageReadPolicy);
+    void removePageFromFrame(FileHandle& fileHandle, common::page_idx_t pageIdx, bool shouldFlush);
+
+    uint64_t freeUsedMemory(uint64_t size);
+
+    void releaseFrameForPage(FileHandle& fileHandle [[maybe_unused]],
+        common::page_idx_t pageIdx [[maybe_unused]]) {
+#if BM_MALLOC
+        // Page is freed instead in PageState::resetToEvicted
+#else
         vmRegions[fileHandle.getPageSizeClass()]->releaseFrame(fileHandle.getFrameIdx(pageIdx));
+#endif
     }
 
+    uint64_t evictPages();
+
 private:
-    std::shared_ptr<spdlog::logger> logger;
-    std::atomic<uint64_t> usedMemory;
     std::atomic<uint64_t> bufferPoolSize;
-    std::atomic<uint64_t> numEvictionQueueInsertions;
+    EvictionQueue evictionQueue;
+    // Total memory used
+    std::atomic<uint64_t> usedMemory;
+    // Amount of memory used which cannot be evicted
+    std::atomic<uint64_t> nonEvictableMemory;
     // Each VMRegion corresponds to a virtual memory region of a specific page size. Currently, we
-    // hold two sizes of PAGE_4KB and PAGE_256KB.
-    std::vector<std::unique_ptr<VMRegion>> vmRegions;
-    std::unique_ptr<EvictionQueue> evictionQueue;
+    // hold two sizes of REGULAR_PAGE and TEMP_PAGE.
+    std::array<std::unique_ptr<VMRegion>, 2> vmRegions;
+    std::vector<std::unique_ptr<FileHandle>> fileHandles;
+    std::unique_ptr<Spiller> spiller;
+    common::VirtualFileSystem* vfs;
 };
 
 } // namespace storage
