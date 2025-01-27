@@ -1,8 +1,6 @@
 #include "processor/processor.h"
 
-#include "processor/operator/aggregate/base_aggregate.h"
-#include "processor/operator/copy/copy.h"
-#include "processor/operator/copy/copy_node.h"
+#include "common/task_system/progress_bar.h"
 #include "processor/operator/result_collector.h"
 #include "processor/operator/sink.h"
 #include "processor/processor_task.h"
@@ -17,74 +15,56 @@ QueryProcessor::QueryProcessor(uint64_t numThreads) {
     taskScheduler = std::make_unique<TaskScheduler>(numThreads);
 }
 
-std::shared_ptr<FactorizedTable> QueryProcessor::execute(
-    PhysicalPlan* physicalPlan, ExecutionContext* context) {
-    if (physicalPlan->isCopyRel()) {
-        auto copy = (Copy*)physicalPlan->lastOperator.get();
-        auto outputMsg = copy->execute(taskScheduler.get(), context);
-        return FactorizedTableUtils::getFactorizedTableForOutputMsg(
-            outputMsg, context->memoryManager);
-    } else {
-        auto lastOperator = physicalPlan->lastOperator.get();
-        // Init global state before decompose into pipelines. Otherwise, each pipeline will try to
-        // init global state. Result in global state being initialized multiple times.
-        lastOperator->initGlobalState(context);
-        auto resultCollector = reinterpret_cast<ResultCollector*>(lastOperator);
-        // The root pipeline(task) consists of operators and its prevOperator only, because we
-        // expect to have linear plans. For binary operators, e.g., HashJoin, we  keep probe and its
-        // prevOperator in the same pipeline, and decompose build and its prevOperator into another
-        // one.
-        auto task = std::make_shared<ProcessorTask>(resultCollector, context);
-        decomposePlanIntoTasks(lastOperator, nullptr, task.get(), context);
-        taskScheduler->scheduleTaskAndWaitOrError(task, context);
-        return resultCollector->getResultFactorizedTable();
-    }
+std::shared_ptr<FactorizedTable> QueryProcessor::execute(PhysicalPlan* physicalPlan,
+    ExecutionContext* context) {
+    auto lastOperator = physicalPlan->lastOperator.get();
+    auto resultCollector = ku_dynamic_cast<ResultCollector*>(lastOperator);
+    // The root pipeline(task) consists of operators and its prevOperator only, because we
+    // expect to have linear plans. For binary operators, e.g., HashJoin, we  keep probe and its
+    // prevOperator in the same pipeline, and decompose build and its prevOperator into another
+    // one.
+    auto task = std::make_shared<ProcessorTask>(resultCollector, context);
+    decomposePlanIntoTask(lastOperator->getChild(0), task.get(), context);
+    initTask(task.get());
+    context->clientContext->getProgressBar()->startProgress(context->queryID);
+    taskScheduler->scheduleTaskAndWaitOrError(task, context);
+    context->clientContext->getProgressBar()->endProgress(context->queryID);
+    return resultCollector->getResultFactorizedTable();
 }
 
-void QueryProcessor::decomposePlanIntoTasks(
-    PhysicalOperator* op, PhysicalOperator* parent, Task* parentTask, ExecutionContext* context) {
-    if (op->isSink() && parent != nullptr) {
-        auto childTask = std::make_unique<ProcessorTask>(reinterpret_cast<Sink*>(op), context);
-        if (op->getOperatorType() == PhysicalOperatorType::AGGREGATE) {
-            auto aggregate = (BaseAggregate*)op;
-            if (aggregate->containDistinctAggregate()) {
-                // Distinct aggregate should be executed in single-thread mode.
-                childTask->setSingleThreadedTask();
-            }
+void QueryProcessor::decomposePlanIntoTask(PhysicalOperator* op, Task* task,
+    ExecutionContext* context) {
+    if (op->isSource()) {
+        context->clientContext->getProgressBar()->addPipeline();
+    }
+    if (op->isSink()) {
+        auto childTask = std::make_unique<ProcessorTask>(ku_dynamic_cast<Sink*>(op), context);
+        for (auto i = (int64_t)op->getNumChildren() - 1; i >= 0; --i) {
+            decomposePlanIntoTask(op->getChild(i), childTask.get(), context);
         }
-        decomposePlanIntoTasks(op->getChild(0), op, childTask.get(), context);
-        parentTask->addChildTask(std::move(childTask));
+        task->addChildTask(std::move(childTask));
     } else {
         // Schedule the right most side (e.g., build side of the hash join) first.
         for (auto i = (int64_t)op->getNumChildren() - 1; i >= 0; --i) {
-            decomposePlanIntoTasks(op->getChild(i), op, parentTask, context);
+            decomposePlanIntoTask(op->getChild(i), task, context);
         }
     }
-    switch (op->getOperatorType()) {
-        // Ordered table should be scanned in single-thread mode.
-    case PhysicalOperatorType::ORDER_BY_MERGE:
-        // DDL should be executed exactly once.
-    case PhysicalOperatorType::CREATE_NODE_TABLE:
-    case PhysicalOperatorType::CREATE_REL_TABLE:
-    case PhysicalOperatorType::DROP_TABLE:
-    case PhysicalOperatorType::DROP_PROPERTY:
-    case PhysicalOperatorType::ADD_PROPERTY:
-    case PhysicalOperatorType::RENAME_PROPERTY:
-    case PhysicalOperatorType::RENAME_TABLE:
-        // As a temporary solution, update is executed in single thread mode.
-    case PhysicalOperatorType::SET_NODE_PROPERTY:
-    case PhysicalOperatorType::SET_REL_PROPERTY:
-    case PhysicalOperatorType::CREATE_NODE:
-    case PhysicalOperatorType::CREATE_REL:
-    case PhysicalOperatorType::DELETE_NODE:
-    case PhysicalOperatorType::DELETE_REL:
-    case PhysicalOperatorType::STANDALONE_CALL:
-    case PhysicalOperatorType::PROFILE:
-    case PhysicalOperatorType::CREATE_MACRO: {
-        parentTask->setSingleThreadedTask();
-    } break;
-    default:
-        break;
+}
+
+void QueryProcessor::initTask(Task* task) {
+    auto processorTask = ku_dynamic_cast<ProcessorTask*>(task);
+    PhysicalOperator* op = processorTask->sink;
+    while (!op->isSource()) {
+        if (!op->isParallel()) {
+            task->setSingleThreadedTask();
+        }
+        op = op->getChild(0);
+    }
+    if (!op->isParallel()) {
+        task->setSingleThreadedTask();
+    }
+    for (auto& child : task->children) {
+        initTask(child.get());
     }
 }
 

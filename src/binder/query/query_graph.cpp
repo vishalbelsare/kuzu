@@ -1,6 +1,6 @@
-#include "binder/query/reading_clause/query_graph.h"
+#include "binder/query/query_graph.h"
 
-#include "binder/expression/expression_visitor.h"
+#include "binder/expression_visitor.h"
 
 namespace kuzu {
 namespace binder {
@@ -12,14 +12,14 @@ std::size_t SubqueryGraphHasher::operator()(const SubqueryGraph& key) const {
     return std::hash<std::bitset<MAX_NUM_QUERY_VARIABLES>>{}(key.queryRelsSelector);
 }
 
-bool SubqueryGraph::containAllVariables(std::unordered_set<std::string>& variables) const {
+bool SubqueryGraph::containAllVariables(const std::unordered_set<std::string>& variables) const {
     for (auto& var : variables) {
         if (queryGraph.containsQueryNode(var) &&
-            !queryNodesSelector[queryGraph.getQueryNodePos(var)]) {
+            !queryNodesSelector[queryGraph.getQueryNodeIdx(var)]) {
             return false;
         }
         if (queryGraph.containsQueryRel(var) &&
-            !queryRelsSelector[queryGraph.getQueryRelPos(var)]) {
+            !queryRelsSelector[queryGraph.getQueryRelIdx(var)]) {
             return false;
         }
     }
@@ -33,11 +33,11 @@ std::unordered_set<uint32_t> SubqueryGraph::getNodeNbrPositions() const {
             continue;
         }
         auto rel = queryGraph.getQueryRel(relPos);
-        auto srcNodePos = queryGraph.getQueryNodePos(*rel->getSrcNode());
+        auto srcNodePos = queryGraph.getQueryNodeIdx(*rel->getSrcNode());
         if (!queryNodesSelector[srcNodePos]) {
             result.insert(srcNodePos);
         }
-        auto dstNodePos = queryGraph.getQueryNodePos(*rel->getDstNode());
+        auto dstNodePos = queryGraph.getQueryNodeIdx(*rel->getDstNode());
         if (!queryNodesSelector[dstNodePos]) {
             result.insert(dstNodePos);
         }
@@ -52,8 +52,8 @@ std::unordered_set<uint32_t> SubqueryGraph::getRelNbrPositions() const {
             continue;
         }
         auto rel = queryGraph.getQueryRel(relPos);
-        auto srcNodePos = queryGraph.getQueryNodePos(*rel->getSrcNode());
-        auto dstNodePos = queryGraph.getQueryNodePos(*rel->getDstNode());
+        auto srcNodePos = queryGraph.getQueryNodeIdx(*rel->getSrcNode());
+        auto dstNodePos = queryGraph.getQueryNodeIdx(*rel->getDstNode());
         if (queryNodesSelector[srcNodePos] || queryNodesSelector[dstNodePos]) {
             result.insert(relPos);
         }
@@ -100,11 +100,30 @@ std::unordered_set<uint32_t> SubqueryGraph::getNodePositionsIgnoringNodeSelector
     for (auto relPos = 0u; relPos < queryGraph.getNumQueryRels(); ++relPos) {
         auto rel = queryGraph.getQueryRel(relPos);
         if (queryRelsSelector[relPos]) {
-            result.insert(queryGraph.getQueryNodePos(rel->getSrcNodeName()));
-            result.insert(queryGraph.getQueryNodePos(rel->getDstNodeName()));
+            result.insert(queryGraph.getQueryNodeIdx(rel->getSrcNodeName()));
+            result.insert(queryGraph.getQueryNodeIdx(rel->getDstNodeName()));
         }
     }
     return result;
+}
+
+std::vector<common::idx_t> SubqueryGraph::getNbrNodeIndices() const {
+    std::unordered_set<common::idx_t> result;
+    for (auto i = 0u; i < queryGraph.getNumQueryRels(); ++i) {
+        if (!queryRelsSelector[i]) {
+            continue;
+        }
+        auto rel = queryGraph.getQueryRel(i);
+        auto srcNodePos = queryGraph.getQueryNodeIdx(rel->getSrcNodeName());
+        auto dstNodePos = queryGraph.getQueryNodeIdx(rel->getDstNodeName());
+        if (!queryNodesSelector[srcNodePos]) {
+            result.insert(srcNodePos);
+        }
+        if (!queryNodesSelector[dstNodePos]) {
+            result.insert(dstNodePos);
+        }
+    }
+    return std::vector<common::idx_t>{result.begin(), result.end()};
 }
 
 subquery_graph_set_t SubqueryGraph::getBaseNbrSubgraph() const {
@@ -112,12 +131,12 @@ subquery_graph_set_t SubqueryGraph::getBaseNbrSubgraph() const {
     for (auto& nodePos : getNodeNbrPositions()) {
         auto nbr = SubqueryGraph(queryGraph);
         nbr.addQueryNode(nodePos);
-        result.insert(std::move(nbr));
+        result.insert(nbr);
     }
     for (auto& relPos : getRelNbrPositions()) {
         auto nbr = SubqueryGraph(queryGraph);
         nbr.addQueryRel(relPos);
-        result.insert(std::move(nbr));
+        result.insert(nbr);
     }
     return result;
 }
@@ -130,7 +149,7 @@ subquery_graph_set_t SubqueryGraph::getNextNbrSubgraphs(const SubqueryGraph& pre
         }
         auto nbr = prevNbr;
         nbr.addQueryNode(nodePos);
-        result.insert(std::move(nbr));
+        result.insert(nbr);
     }
     for (auto& relPos : prevNbr.getRelNbrPositions()) {
         if (queryRelsSelector[relPos]) {
@@ -138,9 +157,34 @@ subquery_graph_set_t SubqueryGraph::getNextNbrSubgraphs(const SubqueryGraph& pre
         }
         auto nbr = prevNbr;
         nbr.addQueryRel(relPos);
-        result.insert(std::move(nbr));
+        result.insert(nbr);
     }
     return result;
+}
+
+bool QueryGraph::isEmpty() const {
+    for (auto& n : queryNodes) {
+        if (n->isEmpty()) {
+            return true;
+        }
+    }
+    for (auto& r : queryRels) {
+        if (r->isEmpty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<std::shared_ptr<NodeOrRelExpression>> QueryGraph::getAllPatterns() const {
+    std::vector<std::shared_ptr<NodeOrRelExpression>> patterns;
+    for (auto& p : queryNodes) {
+        patterns.push_back(p);
+    }
+    for (auto& p : queryRels) {
+        patterns.push_back(p);
+    }
+    return patterns;
 }
 
 void QueryGraph::addQueryNode(std::shared_ptr<NodeExpression> queryNode) {
@@ -151,13 +195,15 @@ void QueryGraph::addQueryNode(std::shared_ptr<NodeExpression> queryNode) {
         return;
     }
     queryNodeNameToPosMap.insert({queryNode->getUniqueName(), queryNodes.size()});
-    queryNodes.push_back(queryNode);
+    queryNodes.push_back(std::move(queryNode));
 }
 
 void QueryGraph::addQueryRel(std::shared_ptr<RelExpression> queryRel) {
-    assert(!containsQueryRel(queryRel->getUniqueName()));
+    if (containsQueryRel(queryRel->getUniqueName())) {
+        return;
+    }
     queryRelNameToPosMap.insert({queryRel->getUniqueName(), queryRels.size()});
-    queryRels.push_back(queryRel);
+    queryRels.push_back(std::move(queryRel));
 }
 
 void QueryGraph::merge(const QueryGraph& other) {
@@ -170,8 +216,9 @@ void QueryGraph::merge(const QueryGraph& other) {
 }
 
 bool QueryGraph::canProjectExpression(const std::shared_ptr<Expression>& expression) const {
-    auto expressionCollector = std::make_unique<ExpressionCollector>();
-    for (auto& variable : expressionCollector->getDependentVariableNames(expression)) {
+    auto collector = DependentVarNameCollector();
+    collector.visit(expression);
+    for (auto& variable : collector.getVarNames()) {
         if (!containsQueryNode(variable) && !containsQueryRel(variable)) {
             return false;
         }
@@ -179,7 +226,7 @@ bool QueryGraph::canProjectExpression(const std::shared_ptr<Expression>& express
     return true;
 }
 
-bool QueryGraph::isConnected(const QueryGraph& other) {
+bool QueryGraph::isConnected(const QueryGraph& other) const {
     for (auto& queryNode : queryNodes) {
         if (other.containsQueryNode(queryNode->getUniqueName())) {
             return true;
@@ -188,24 +235,82 @@ bool QueryGraph::isConnected(const QueryGraph& other) {
     return false;
 }
 
-void QueryGraphCollection::addAndMergeQueryGraphIfConnected(
-    std::unique_ptr<QueryGraph> queryGraphToAdd) {
-    bool isMerged = false;
-    for (auto& queryGraph : queryGraphs) {
-        if (queryGraph->isConnected(*queryGraphToAdd)) {
-            queryGraph->merge(*queryGraphToAdd);
-            isMerged = true;
+void QueryGraphCollection::addAndMergeQueryGraphIfConnected(QueryGraph queryGraphToAdd) {
+    auto newQueryGraphSet = std::vector<QueryGraph>();
+    for (auto i = 0u; i < queryGraphs.size(); i++) {
+        auto queryGraph = std::move(queryGraphs[i]);
+        if (queryGraph.isConnected(queryGraphToAdd)) {
+            queryGraphToAdd.merge(queryGraph);
+        } else {
+            newQueryGraphSet.push_back(std::move(queryGraph));
         }
     }
-    if (!isMerged) {
-        queryGraphs.push_back(std::move(queryGraphToAdd));
+    newQueryGraphSet.push_back(std::move(queryGraphToAdd));
+    queryGraphs = std::move(newQueryGraphSet);
+}
+
+void QueryGraphCollection::finalize() {
+    common::idx_t baseGraphIdx = 0;
+    while (true) {
+        auto prevNumGraphs = queryGraphs.size();
+        queryGraphs = mergeGraphs(baseGraphIdx++);
+        if (queryGraphs.size() == prevNumGraphs || baseGraphIdx == queryGraphs.size()) {
+            return;
+        }
     }
+}
+
+std::vector<QueryGraph> QueryGraphCollection::mergeGraphs(common::idx_t baseGraphIdx) {
+    KU_ASSERT(baseGraphIdx < queryGraphs.size());
+    auto& baseGraph = queryGraphs[baseGraphIdx];
+    std::unordered_set<common::idx_t> mergedGraphIndices;
+    mergedGraphIndices.insert(baseGraphIdx);
+    while (true) {
+        // find graph to merge
+        common::idx_t graphToMergeIdx = common::INVALID_IDX;
+        for (auto i = 0u; i < queryGraphs.size(); ++i) {
+            if (mergedGraphIndices.contains(i)) { // graph has been merged.
+                continue;
+            }
+            if (baseGraph.isConnected(queryGraphs[i])) { // find graph to merge.
+                graphToMergeIdx = i;
+                break;
+            }
+        }
+        if (graphToMergeIdx == common::INVALID_IDX) { // No graph can be merged. Terminate.
+            break;
+        }
+        // Perform merge
+        baseGraph.merge(queryGraphs[graphToMergeIdx]);
+        mergedGraphIndices.insert(graphToMergeIdx);
+    }
+    std::vector<QueryGraph> finalGraphs;
+    for (auto i = 0u; i < queryGraphs.size(); ++i) {
+        if (i == baseGraphIdx) {
+            finalGraphs.push_back(baseGraph);
+            continue;
+        }
+        if (mergedGraphIndices.contains(i)) {
+            continue;
+        }
+        finalGraphs.push_back(std::move(queryGraphs[i]));
+    }
+    return finalGraphs;
+}
+
+bool QueryGraphCollection::contains(const std::string& name) const {
+    for (auto& queryGraph : queryGraphs) {
+        if (queryGraph.containsQueryNode(name) || queryGraph.containsQueryRel(name)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::vector<std::shared_ptr<NodeExpression>> QueryGraphCollection::getQueryNodes() const {
     std::vector<std::shared_ptr<NodeExpression>> result;
     for (auto& queryGraph : queryGraphs) {
-        for (auto& node : queryGraph->getQueryNodes()) {
+        for (auto& node : queryGraph.getQueryNodes()) {
             result.push_back(node);
         }
     }
@@ -215,66 +320,11 @@ std::vector<std::shared_ptr<NodeExpression>> QueryGraphCollection::getQueryNodes
 std::vector<std::shared_ptr<RelExpression>> QueryGraphCollection::getQueryRels() const {
     std::vector<std::shared_ptr<RelExpression>> result;
     for (auto& queryGraph : queryGraphs) {
-        for (auto& rel : queryGraph->getQueryRels()) {
+        for (auto& rel : queryGraph.getQueryRels()) {
             result.push_back(rel);
         }
     }
     return result;
-}
-
-std::unique_ptr<QueryGraphCollection> QueryGraphCollection::copy() const {
-    auto result = std::make_unique<QueryGraphCollection>();
-    for (auto& queryGraph : queryGraphs) {
-        result->queryGraphs.push_back(queryGraph->copy());
-    }
-    return result;
-}
-
-void PropertyKeyValCollection::addKeyVal(
-    std::shared_ptr<Expression> variable, const std::string& propertyName, expression_pair keyVal) {
-    if (!propertyKeyValMap.contains(variable)) {
-        propertyKeyValMap.insert({variable, std::unordered_map<std::string, expression_pair>{}});
-    }
-    propertyKeyValMap.at(variable).insert({propertyName, std::move(keyVal)});
-}
-
-std::vector<expression_pair> PropertyKeyValCollection::getKeyVals() const {
-    std::vector<expression_pair> result;
-    for (auto& [_, keyVals] : propertyKeyValMap) {
-        for (auto& [_, keyVal] : keyVals) {
-            result.push_back(keyVal);
-        }
-    }
-    return result;
-}
-
-std::vector<expression_pair> PropertyKeyValCollection::getKeyVals(
-    std::shared_ptr<Expression> variable) const {
-    std::vector<expression_pair> result;
-    if (!propertyKeyValMap.contains(variable)) {
-        return result;
-    }
-    for (auto& [_, keyVal] : propertyKeyValMap.at(variable)) {
-        result.push_back(keyVal);
-    }
-    return result;
-}
-
-bool PropertyKeyValCollection::hasKeyVal(
-    std::shared_ptr<Expression> variable, const std::string& propertyName) const {
-    if (!propertyKeyValMap.contains(variable)) {
-        return false;
-    }
-    if (!propertyKeyValMap.at(variable).contains(propertyName)) {
-        return false;
-    }
-    return true;
-}
-
-expression_pair PropertyKeyValCollection::getKeyVal(
-    std::shared_ptr<Expression> variable, const std::string& propertyName) const {
-    assert(hasKeyVal(variable, propertyName));
-    return propertyKeyValMap.at(variable).at(propertyName);
 }
 
 } // namespace binder

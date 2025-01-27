@@ -1,72 +1,89 @@
 #pragma once
 
-#include <unordered_map>
-
+#include "common/case_insensitive_map.h"
 #include "expression.h"
 
 namespace kuzu {
+namespace catalog {
+class TableCatalogEntry;
+}
 namespace binder {
 
 class NodeOrRelExpression : public Expression {
+    static constexpr common::ExpressionType expressionType_ = common::ExpressionType::PATTERN;
+
 public:
     NodeOrRelExpression(common::LogicalType dataType, std::string uniqueName,
-        std::string variableName, std::vector<common::table_id_t> tableIDs)
-        : Expression{common::VARIABLE, std::move(dataType), std::move(uniqueName)},
-          variableName(std::move(variableName)), tableIDs{std::move(tableIDs)} {}
-    virtual ~NodeOrRelExpression() override = default;
+        std::string variableName, std::vector<catalog::TableCatalogEntry*> entries)
+        : Expression{expressionType_, std::move(dataType), std::move(uniqueName)},
+          variableName(std::move(variableName)), entries{std::move(entries)} {}
 
-    inline std::string getVariableName() const { return variableName; }
-
-    inline void addTableIDs(const std::vector<common::table_id_t>& tableIDsToAdd) {
-        auto tableIDsSet = getTableIDsSet();
-        for (auto tableID : tableIDsToAdd) {
-            if (!tableIDsSet.contains(tableID)) {
-                tableIDs.push_back(tableID);
-            }
-        }
-    }
-    inline bool isMultiLabeled() const { return tableIDs.size() > 1; }
-    inline uint32_t getNumTableIDs() const { return tableIDs.size(); }
-    inline std::vector<common::table_id_t> getTableIDs() const { return tableIDs; }
-    inline std::unordered_set<common::table_id_t> getTableIDsSet() const {
-        return {tableIDs.begin(), tableIDs.end()};
-    }
-    inline common::table_id_t getSingleTableID() const {
-        assert(tableIDs.size() == 1);
-        return tableIDs[0];
+    // Note: ideally I would try to remove this function. But for now, we have to create type
+    // after expression.
+    void setExtraTypeInfo(std::unique_ptr<common::ExtraTypeInfo> info) {
+        dataType.setExtraTypeInfo(std::move(info));
     }
 
-    inline void addPropertyExpression(
-        const std::string& propertyName, std::unique_ptr<Expression> property) {
-        assert(!propertyNameToIdx.contains(propertyName));
-        propertyNameToIdx.insert({propertyName, properties.size()});
-        properties.push_back(std::move(property));
+    std::string getVariableName() const { return variableName; }
+
+    bool isEmpty() const { return entries.empty(); }
+    bool isMultiLabeled() const { return entries.size() > 1; }
+    common::idx_t getNumEntries() const { return entries.size(); }
+    common::table_id_vector_t getTableIDs() const;
+    common::table_id_set_t getTableIDsSet() const;
+    const std::vector<catalog::TableCatalogEntry*>& getEntries() const { return entries; }
+    void setEntries(std::vector<catalog::TableCatalogEntry*> entries_) {
+        entries = std::move(entries_);
     }
-    inline bool hasPropertyExpression(const std::string& propertyName) const {
+    void addEntries(const std::vector<catalog::TableCatalogEntry*>& entries_);
+    KUZU_API catalog::TableCatalogEntry* getSingleEntry() const;
+
+    void addPropertyExpression(const std::string& propertyName,
+        std::unique_ptr<Expression> property);
+    bool hasPropertyExpression(const std::string& propertyName) const {
         return propertyNameToIdx.contains(propertyName);
     }
-    inline std::shared_ptr<Expression> getPropertyExpression(
-        const std::string& propertyName) const {
-        assert(propertyNameToIdx.contains(propertyName));
-        return properties[propertyNameToIdx.at(propertyName)]->copy();
+    // Deep copy expression.
+    std::shared_ptr<Expression> getPropertyExpression(const std::string& propertyName) const;
+    const std::vector<std::unique_ptr<Expression>>& getPropertyExprsRef() const {
+        return propertyExprs;
     }
-    inline const std::vector<std::unique_ptr<Expression>>& getPropertyExpressions() const {
-        return properties;
-    }
+    // Deep copy expressions.
+    expression_vector getPropertyExprs() const;
 
-    inline void setLabelExpression(std::shared_ptr<Expression> expression) {
+    void setLabelExpression(std::shared_ptr<Expression> expression) {
         labelExpression = std::move(expression);
     }
-    inline std::shared_ptr<Expression> getLabelExpression() const { return labelExpression; }
+    std::shared_ptr<Expression> getLabelExpression() const { return labelExpression; }
 
-    std::string toString() const override { return variableName; }
+    void addPropertyDataExpr(std::string propertyName, std::shared_ptr<Expression> expr) {
+        propertyDataExprs.insert({propertyName, expr});
+    }
+    const common::case_insensitive_map_t<std::shared_ptr<Expression>>&
+    getPropertyDataExprRef() const {
+        return propertyDataExprs;
+    }
+    bool hasPropertyDataExpr(const std::string& propertyName) const {
+        return propertyDataExprs.contains(propertyName);
+    }
+    std::shared_ptr<Expression> getPropertyDataExpr(const std::string& propertyName) const {
+        KU_ASSERT(propertyDataExprs.contains(propertyName));
+        return propertyDataExprs.at(propertyName);
+    }
+
+    std::string toStringInternal() const final { return variableName; }
 
 protected:
     std::string variableName;
-    std::vector<common::table_id_t> tableIDs;
-    std::unordered_map<std::string, common::vector_idx_t> propertyNameToIdx;
-    std::vector<std::unique_ptr<Expression>> properties;
+    // A pattern may bind to multiple tables.
+    std::vector<catalog::TableCatalogEntry*> entries;
+    // Index over propertyExprs on property name.
+    common::case_insensitive_map_t<common::idx_t> propertyNameToIdx;
+    // Property expressions with order (aligned with catalog).
+    std::vector<std::unique_ptr<Expression>> propertyExprs;
     std::shared_ptr<Expression> labelExpression;
+    // Property data expressions specified by user in the form of "{propertyName : data}"
+    common::case_insensitive_map_t<std::shared_ptr<Expression>> propertyDataExprs;
 };
 
 } // namespace binder

@@ -9,54 +9,27 @@ fn link_mode() -> &'static str {
     }
 }
 
-fn find_openssl_windows() {
-    // Find openssl library relative to the path of the openssl executable
-    // Or fall back to OPENSSL_DIR
-    #[cfg(windows)]
-    {
-        let openssl_dir = if let Ok(mut path) = which::which("openssl") {
-            path.pop();
-            path.pop();
-            path
-        } else if let Ok(path) = env::var("OPENSSL_CONF") {
-            Path::new(&path)
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .to_path_buf()
-        } else if let Ok(path) = env::var("OPENSSL_DIR") {
-            Path::new(&path).to_path_buf()
-        } else {
-            panic!(
-                "OPENSSL_DIR must be set if the openssl library cannot be found \
-                            using the path of the openssl executable"
-            )
-        };
-        println!(
-            "cargo:rustc-link-search=native={}/lib",
-            openssl_dir.display()
-        );
-    }
-}
-
 fn get_target() -> String {
-    if cfg!(windows) && std::env::var("CXXFLAGS").is_err() {
-        "release".to_string()
-    } else {
-        env::var("PROFILE").unwrap()
-    }
+    env::var("PROFILE").unwrap()
 }
 
 fn link_libraries() {
-    println!("cargo:rustc-link-lib={}=kuzu", link_mode());
+    if cfg!(windows) && link_mode() == "dylib" {
+        println!("cargo:rustc-link-lib=dylib=kuzu_shared");
+    } else {
+        if link_mode() == "dylib" {
+            println!("cargo:rustc-link-lib={}=kuzu", link_mode());
+        } else {
+            if rustversion::cfg!(since(1.82)) {
+                println!("cargo:rustc-link-lib=static:+whole-archive=kuzu");
+            } else {
+                println!("cargo:rustc-link-lib=static=kuzu");
+            }
+        }
+    }
     if link_mode() == "static" {
         if cfg!(windows) {
-            if get_target() == "debug" {
-                println!("cargo:rustc-link-lib=dylib=msvcrtd");
-            } else {
-                println!("cargo:rustc-link-lib=dylib=msvcrt");
-            }
+            println!("cargo:rustc-link-lib=dylib=msvcrt");
             println!("cargo:rustc-link-lib=dylib=shell32");
             println!("cargo:rustc-link-lib=dylib=ole32");
         } else if cfg!(target_os = "macos") {
@@ -65,25 +38,29 @@ fn link_libraries() {
             println!("cargo:rustc-link-lib=dylib=stdc++");
         }
 
-        println!("cargo:rustc-link-lib=static=arrow_bundled_dependencies");
-        if env::var("KUZU_TESTING").is_ok() && cfg!(windows) {
-            find_openssl_windows();
-            println!("cargo:rustc-link-lib=dylib=libssl");
-            println!("cargo:rustc-link-lib=dylib=libcrypto");
+        for lib in [
+            "utf8proc",
+            "antlr4_cypher",
+            "antlr4_runtime",
+            "re2",
+            "fastpfor",
+            "parquet",
+            "thrift",
+            "snappy",
+            "zstd",
+            "miniz",
+            "mbedtls",
+            "brotlidec",
+            "brotlicommon",
+            "lz4",
+            "roaring_bitmap",
+        ] {
+            if rustversion::cfg!(since(1.82)) {
+                println!("cargo:rustc-link-lib=static:+whole-archive={}", lib);
+            } else {
+                println!("cargo:rustc-link-lib=static={}", lib);
+            }
         }
-
-        if cfg!(windows) {
-            println!("cargo:rustc-link-lib=static=parquet_static");
-            println!("cargo:rustc-link-lib=static=arrow_static");
-        } else {
-            println!("cargo:rustc-link-lib=static=parquet");
-            println!("cargo:rustc-link-lib=static=arrow");
-        }
-
-        println!("cargo:rustc-link-lib=static=utf8proc");
-        println!("cargo:rustc-link-lib=static=antlr4_cypher");
-        println!("cargo:rustc-link-lib=static=antlr4_runtime");
-        println!("cargo:rustc-link-lib=static=re2");
     }
 }
 
@@ -98,44 +75,44 @@ fn build_bundled_cmake() -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
             Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("../..")
         }
     };
-    let mut arrow_build = cmake::Config::new(kuzu_root.join("external"));
-    arrow_build
-        .no_build_target(true)
-        // Needs separate out directory so they don't clobber each other
-        .out_dir(Path::new(&env::var("OUT_DIR").unwrap()).join("arrow"));
-
-    if cfg!(windows) {
-        arrow_build.generator("Ninja");
-        arrow_build.cxxflag("/EHsc");
-    }
-    let arrow_build_dir = arrow_build.build();
-
-    let arrow_install = arrow_build_dir.join("build/arrow/install");
-    println!(
-        "cargo:rustc-link-search=native={}",
-        arrow_install.join("lib").display()
-    );
-    println!(
-        "cargo:rustc-link-search=native={}",
-        arrow_install.join("lib64").display()
-    );
 
     let mut build = cmake::Config::new(&kuzu_root);
     build
         .no_build_target(true)
         .define("BUILD_SHELL", "OFF")
-        .define("BUILD_PYTHON_API", "OFF")
-        .define("ARROW_INSTALL", &arrow_install);
+        .define("BUILD_SINGLE_FILE_HEADER", "OFF")
+        .define("AUTO_UPDATE_GRAMMAR", "OFF");
     if cfg!(windows) {
         build.generator("Ninja");
         build.cxxflag("/EHsc");
+        build.define("CMAKE_MSVC_RUNTIME_LIBRARY", "MultiThreadedDLL");
+        build.define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW");
+    }
+    if let Ok(jobs) = std::env::var("NUM_JOBS") {
+        std::env::set_var("CMAKE_BUILD_PARALLEL_LEVEL", jobs);
     }
     let build_dir = build.build();
 
     let kuzu_lib_path = build_dir.join("build").join("src");
     println!("cargo:rustc-link-search=native={}", kuzu_lib_path.display());
 
-    for dir in ["utf8proc", "antlr4_cypher", "antlr4_runtime", "re2"] {
+    for dir in [
+        "utf8proc",
+        "antlr4_cypher",
+        "antlr4_runtime",
+        "re2",
+        "brotli",
+        "alp",
+        "fastpfor",
+        "parquet",
+        "thrift",
+        "snappy",
+        "zstd",
+        "miniz",
+        "mbedtls",
+        "lz4",
+        "roaring_bitmap",
+    ] {
         let lib_path = build_dir
             .join("build")
             .join("third_party")
@@ -153,10 +130,10 @@ fn build_bundled_cmake() -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
 
     Ok(vec![
         kuzu_root.join("src/include"),
-        kuzu_root.join("third_party/concurrentqueue"),
+        build_dir.join("build/src"),
         kuzu_root.join("third_party/nlohmann_json"),
-        kuzu_root.join("third_party/spdlog"),
-        arrow_install.join("include"),
+        kuzu_root.join("third_party/fastpfor"),
+        kuzu_root.join("third_party/alp/include"),
     ])
 }
 
@@ -173,18 +150,30 @@ fn build_ffi(
     if bundled {
         build.define("KUZU_BUNDLED", None);
     }
+    if get_target() == "debug" || get_target() == "relwithdebinfo" {
+        build.define("ENABLE_RUNTIME_CHECKS", "1");
+    }
+    if link_mode() == "static" {
+        build.define("KUZU_STATIC_DEFINE", None);
+    }
 
     build.includes(include_paths);
-
-    link_libraries();
 
     println!("cargo:rerun-if-env-changed=KUZU_SHARED");
 
     println!("cargo:rerun-if-changed=include/kuzu_rs.h");
-    println!("cargo:rerun-if-changed=include/kuzu_rs.cpp");
+    println!("cargo:rerun-if-changed=src/kuzu_rs.cpp");
+    // Note that this should match the kuzu-src/* entries in the package.include list in Cargo.toml
+    // Unfortunately they appear to need to be specified individually since the symlink is
+    // considered to be changed each time.
+    println!("cargo:rerun-if-changed=kuzu-src/src");
+    println!("cargo:rerun-if-changed=kuzu-src/third_party");
+    println!("cargo:rerun-if-changed=kuzu-src/CMakeLists.txt");
+    println!("cargo:rerun-if-changed=kuzu-src/tools/CMakeLists.txt");
 
     if cfg!(windows) {
         build.flag("/std:c++20");
+        build.flag("/MD");
     } else {
         build.flag("-std=c++2a");
     }
@@ -205,15 +194,15 @@ fn main() {
         (env::var("KUZU_LIBRARY_DIR"), env::var("KUZU_INCLUDE_DIR"))
     {
         println!("cargo:rustc-link-search=native={}", kuzu_lib_dir);
-        if cfg!(windows) && link_mode() == "dylib" {
-            println!("cargo:rustc-link-lib=dylib=kuzu_shared");
-        } else {
-            println!("cargo:rustc-link-lib={}=kuzu", link_mode());
-        }
+        // Also add to environment used by cargo run and tests
+        println!("cargo:rustc-env=LD_LIBRARY_PATH={}", kuzu_lib_dir);
         include_paths.push(Path::new(&kuzu_include).to_path_buf());
     } else {
         include_paths.extend(build_bundled_cmake().expect("Bundled build failed!"));
         bundled = true;
+    }
+    if link_mode() == "static" {
+        link_libraries();
     }
     build_ffi(
         "src/ffi.rs",
@@ -231,5 +220,8 @@ fn main() {
             bundled,
             &include_paths,
         );
+    }
+    if link_mode() == "dylib" {
+        link_libraries();
     }
 }

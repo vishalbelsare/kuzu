@@ -1,25 +1,27 @@
 #pragma once
 
-#include "parser/expression/parsed_expression.h"
 #include "parser/query/reading_clause/reading_clause.h"
+#include "yield_variable.h"
 
 namespace kuzu {
 namespace parser {
 
-class InQueryCallClause : public ReadingClause {
+class InQueryCallClause final : public ReadingClause {
+    static constexpr common::ClauseType clauseType_ = common::ClauseType::IN_QUERY_CALL;
+
 public:
-    InQueryCallClause(
-        std::string optionName, std::vector<std::unique_ptr<ParsedExpression>> parameters)
-        : ReadingClause{common::ClauseType::InQueryCall}, funcName{std::move(optionName)},
-          parameters{std::move(parameters)} {}
+    InQueryCallClause(std::unique_ptr<ParsedExpression> functionExpression,
+        std::vector<YieldVariable> yieldClause)
+        : ReadingClause{clauseType_}, functionExpression{std::move(functionExpression)},
+          yieldVariables{std::move(yieldClause)} {}
 
-    inline std::string getFuncName() const { return funcName; }
+    const ParsedExpression* getFunctionExpression() const { return functionExpression.get(); }
 
-    std::vector<ParsedExpression*> getParameters() const;
+    const std::vector<YieldVariable>& getYieldVariables() const { return yieldVariables; }
 
 private:
-    std::string funcName;
-    std::vector<std::unique_ptr<ParsedExpression>> parameters;
+    std::unique_ptr<ParsedExpression> functionExpression;
+    std::vector<YieldVariable> yieldVariables;
 };
 
 } // namespace parser

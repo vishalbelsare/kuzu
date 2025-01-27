@@ -1,4 +1,3 @@
--GROUP CopyInvalidNumberTest
 -DATASET CSV copy-fault-tests/invalid-row
 
 --
@@ -20,4 +19,16 @@
 ---- ok
 -STATEMENT COPY watch FROM "${KUZU_ROOT_DIRECTORY}/dataset/copy-fault-tests/invalid-row/eWatches.csv"
 ---- error
-Copy exception: Primary key column contains value 5 around L2 in file ${KUZU_ROOT_DIRECTORY}/dataset/copy-fault-tests/invalid-row/eWatches.csv that does not exist in the table.
+Copy exception: Unable to find primary key value 5.
+
+-CASE InvalidHeader
+-STATEMENT create node table tableOfTypes (id INT64, int64Column INT64, doubleColumn DOUBLE, booleanColumn BOOLEAN, dateColumn DATE, timestampColumn TIMESTAMP, stringColumn STRING, listOfInt INT64[], PRIMARY KEY (id));
+---- ok
+-STATEMENT COPY tableOfTypes FROM "${KUZU_ROOT_DIRECTORY}/dataset/copy-test/node/csv/types_50k.csv" (auto_detect = false)
+---- error
+Copy exception: Error in file ${KUZU_ROOT_DIRECTORY}/dataset/copy-test/node/csv/types_50k.csv on line 1: Conversion exception: Cast failed. Could not convert "id" to INT64. Line/record containing the error: 'id...'
+
+-CASE CastErrorPreviousBlockNotFinished
+-STATEMENT COPY personString FROM "${KUZU_ROOT_DIRECTORY}/dataset/copy-fault-tests/invalid-row/vPersonLongRow.csv"
+---- error
+Copy exception: Error in file ${KUZU_ROOT_DIRECTORY}/dataset/copy-fault-tests/invalid-row/vPersonLongRow.csv on line 6: Conversion exception: Cast failed. Could not convert "5a" to INT16. Line/record containing the error: '5a...'

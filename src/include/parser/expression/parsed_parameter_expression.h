@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/assert.h"
 #include "parsed_expression.h"
 
 namespace kuzu {
@@ -8,24 +9,19 @@ namespace parser {
 class ParsedParameterExpression : public ParsedExpression {
 public:
     explicit ParsedParameterExpression(std::string parameterName, std::string raw)
-        : ParsedExpression{common::PARAMETER, std::move(raw)}, parameterName{
-                                                                   std::move(parameterName)} {}
+        : ParsedExpression{common::ExpressionType::PARAMETER, std::move(raw)},
+          parameterName{std::move(parameterName)} {}
 
     inline std::string getParameterName() const { return parameterName; }
 
-    static std::unique_ptr<ParsedParameterExpression> deserialize(
-        common::FileInfo* fileInfo, uint64_t& offset) {
-        throw common::NotImplementedException{"ParsedParameterExpression::deserialize()"};
+    static std::unique_ptr<ParsedParameterExpression> deserialize(common::Deserializer&) {
+        KU_UNREACHABLE;
     }
 
-    inline std::unique_ptr<ParsedExpression> copy() const override {
-        throw common::NotImplementedException{"ParsedParameterExpression::copy()"};
-    }
+    inline std::unique_ptr<ParsedExpression> copy() const override { KU_UNREACHABLE; }
 
 private:
-    void serializeInternal(common::FileInfo* fileInfo, uint64_t& offset) const override {
-        throw common::NotImplementedException{"ParsedParameterExpression::serializeInternal()"};
-    }
+    void serializeInternal(common::Serializer&) const override { KU_UNREACHABLE; }
 
 private:
     std::string parameterName;

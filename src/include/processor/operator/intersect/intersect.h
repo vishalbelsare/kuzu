@@ -1,6 +1,6 @@
 #pragma once
 
-#include "processor/operator/intersect/intersect_build.h"
+#include "processor/operator/hash_join/hash_join_build.h"
 #include "processor/operator/physical_operator.h"
 
 namespace kuzu {
@@ -12,15 +12,31 @@ struct IntersectDataInfo {
     std::vector<DataPos> payloadsDataPos;
 };
 
+struct IntersectPrintInfo final : OPPrintInfo {
+    std::shared_ptr<binder::Expression> key;
+
+    explicit IntersectPrintInfo(std::shared_ptr<binder::Expression> key) : key{std::move(key)} {}
+
+    std::string toString() const override;
+    std::unique_ptr<OPPrintInfo> copy() const override {
+        return std::unique_ptr<IntersectPrintInfo>(new IntersectPrintInfo(*this));
+    }
+
+private:
+    IntersectPrintInfo(const IntersectPrintInfo& other) : OPPrintInfo{other}, key{other.key} {}
+};
+
 class Intersect : public PhysicalOperator {
+    static constexpr PhysicalOperatorType type_ = PhysicalOperatorType::INTERSECT;
+
 public:
     Intersect(const DataPos& outputDataPos, std::vector<IntersectDataInfo> intersectDataInfos,
-        std::vector<std::shared_ptr<IntersectSharedState>> sharedHTs,
+        std::vector<std::shared_ptr<HashJoinSharedState>> sharedHTs,
         std::vector<std::unique_ptr<PhysicalOperator>> children, uint32_t id,
-        const std::string& paramsString)
-        : PhysicalOperator{PhysicalOperatorType::INTERSECT, std::move(children), id, paramsString},
-          outputDataPos{outputDataPos},
-          intersectDataInfos{std::move(intersectDataInfos)}, sharedHTs{std::move(sharedHTs)} {
+        std::unique_ptr<OPPrintInfo> printInfo)
+        : PhysicalOperator{type_, std::move(children), id, std::move(printInfo)},
+          outputDataPos{outputDataPos}, intersectDataInfos{std::move(intersectDataInfos)},
+          sharedHTs{std::move(sharedHTs)} {
         tupleIdxPerBuildSide.resize(this->sharedHTs.size(), 0);
         carryBuildSideIdx = -1u;
         probedFlatTuples.resize(this->sharedHTs.size());
@@ -30,11 +46,11 @@ public:
 
     bool getNextTuplesInternal(ExecutionContext* context) override;
 
-    inline std::unique_ptr<PhysicalOperator> clone() override {
+    std::unique_ptr<PhysicalOperator> clone() override {
         std::vector<std::unique_ptr<PhysicalOperator>> clonedChildren;
         clonedChildren.push_back(children[0]->clone());
         return std::make_unique<Intersect>(outputDataPos, intersectDataInfos, sharedHTs,
-            std::move(clonedChildren), id, paramsString);
+            std::move(clonedChildren), id, printInfo->copy());
     }
 
 private:
@@ -44,8 +60,8 @@ private:
     static void twoWayIntersect(common::nodeID_t* leftNodeIDs, common::SelectionVector& lSelVector,
         common::nodeID_t* rightNodeIDs, common::SelectionVector& rSelVector);
     void intersectLists(const std::vector<common::overflow_value_t>& listsToIntersect);
-    void populatePayloads(
-        const std::vector<uint8_t*>& tuples, const std::vector<uint32_t>& listIdxes);
+    void populatePayloads(const std::vector<uint8_t*>& tuples,
+        const std::vector<uint32_t>& listIdxes);
     bool hasNextTuplesToIntersect();
 
     inline uint32_t getNumBuilds() { return sharedHTs.size(); }
@@ -59,7 +75,7 @@ private:
     std::shared_ptr<common::ValueVector> outKeyVector;
     std::vector<std::shared_ptr<common::ValueVector>> probeKeyVectors;
     std::vector<std::unique_ptr<common::SelectionVector>> intersectSelVectors;
-    std::vector<std::shared_ptr<IntersectSharedState>> sharedHTs;
+    std::vector<std::shared_ptr<HashJoinSharedState>> sharedHTs;
     std::vector<bool> isIntersectListAFlatValue;
     std::vector<std::vector<uint8_t*>> probedFlatTuples;
     // Keep track of the tuple to intersect for each build side.

@@ -1,7 +1,12 @@
-#include "binder/expression/literal_expression.h"
-#include "binder/expression/rel_expression.h"
+#include "binder/binder.h"
+#include "binder/expression/expression_util.h"
+#include "binder/expression/node_rel_expression.h"
+#include "binder/expression/property_expression.h"
 #include "binder/expression_binder.h"
-#include "common/string_utils.h"
+#include "common/cast.h"
+#include "common/exception/binder.h"
+#include "common/string_format.h"
+#include "function/struct/vector_struct_functions.h"
 #include "parser/expression/parsed_property_expression.h"
 
 using namespace kuzu::common;
@@ -11,137 +16,111 @@ using namespace kuzu::catalog;
 namespace kuzu {
 namespace binder {
 
+static bool isNodeOrRelPattern(const Expression& expression) {
+    return ExpressionUtil::isNodePattern(expression) || ExpressionUtil::isRelPattern(expression);
+}
+
+static bool isStructPattern(const Expression& expression) {
+    auto logicalTypeID = expression.getDataType().getLogicalTypeID();
+    return logicalTypeID == LogicalTypeID::NODE || logicalTypeID == LogicalTypeID::REL ||
+           logicalTypeID == LogicalTypeID::STRUCT;
+}
+
 expression_vector ExpressionBinder::bindPropertyStarExpression(
     const parser::ParsedExpression& parsedExpression) {
     auto child = bindExpression(*parsedExpression.getChild(0));
-    validateExpectedDataType(*child,
-        std::vector<LogicalTypeID>{LogicalTypeID::NODE, LogicalTypeID::REL, LogicalTypeID::STRUCT});
-    if (ExpressionUtil::isNodeVariable(*child)) {
-        return bindNodePropertyStarExpression(*child);
-    } else if (ExpressionUtil::isRelVariable(*child)) {
-        return bindRelPropertyStarExpression(*child);
-    } else {
+    if (isNodeOrRelPattern(*child)) {
+        return bindNodeOrRelPropertyStarExpression(*child);
+    } else if (isStructPattern(*child)) {
         return bindStructPropertyStarExpression(child);
+    } else {
+        throw BinderException(stringFormat("Cannot bind property for expression {} with type {}.",
+            child->toString(), ExpressionTypeUtil::toString(child->expressionType)));
     }
 }
 
-expression_vector ExpressionBinder::bindNodePropertyStarExpression(const Expression& child) {
+expression_vector ExpressionBinder::bindNodeOrRelPropertyStarExpression(const Expression& child) {
     expression_vector result;
-    auto& node = (NodeExpression&)child;
-    for (auto& property : node.getPropertyExpressions()) {
-        result.push_back(property->copy());
-    }
-    return result;
-}
-
-expression_vector ExpressionBinder::bindRelPropertyStarExpression(const Expression& child) {
-    expression_vector result;
-    auto& node = (RelExpression&)child;
-    for (auto& property : node.getPropertyExpressions()) {
-        auto propertyExpression = (PropertyExpression*)property.get();
-        if (TableSchema::isReservedPropertyName(propertyExpression->getPropertyName())) {
+    auto& nodeOrRel = child.constCast<NodeOrRelExpression>();
+    for (auto& expression : nodeOrRel.getPropertyExprsRef()) {
+        auto propertyExpression = expression->ptrCast<PropertyExpression>();
+        if (Binder::reservedInPropertyLookup(propertyExpression->getPropertyName())) {
             continue;
         }
-        result.push_back(property->copy());
+        result.push_back(expression->copy());
     }
     return result;
 }
 
 expression_vector ExpressionBinder::bindStructPropertyStarExpression(
-    std::shared_ptr<Expression> child) {
-    assert(child->getDataType().getLogicalTypeID() == common::LogicalTypeID::STRUCT);
+    const std::shared_ptr<Expression>& child) {
     expression_vector result;
-    auto childType = child->getDataType();
-    for (auto field : StructType::getFields(&childType)) {
-        result.push_back(bindStructPropertyExpression(child, field->getName()));
+    const auto& childType = child->getDataType();
+    for (auto& field : StructType::getFields(childType)) {
+        result.push_back(bindStructPropertyExpression(child, field.getName()));
     }
     return result;
 }
 
 std::shared_ptr<Expression> ExpressionBinder::bindPropertyExpression(
     const ParsedExpression& parsedExpression) {
-    auto& propertyExpression = (ParsedPropertyExpression&)parsedExpression;
+    auto& propertyExpression = parsedExpression.constCast<ParsedPropertyExpression>();
     if (propertyExpression.isStar()) {
-        throw BinderException(StringUtils::string_format(
-            "Cannot bind {} as a single property expression.", parsedExpression.toString()));
+        throw BinderException(stringFormat("Cannot bind {} as a single property expression.",
+            parsedExpression.toString()));
     }
     auto propertyName = propertyExpression.getPropertyName();
-    if (TableSchema::isReservedPropertyName(propertyName)) {
-        // Note we don't expose direct access to internal properties in case user tries to modify
-        // them. However, we can expose indirect read-only access through function e.g. ID().
-        throw BinderException(
-            propertyName + " is reserved for system usage. External access is not allowed.");
-    }
     auto child = bindExpression(*parsedExpression.getChild(0));
-    validateExpectedDataType(*child,
-        std::vector<LogicalTypeID>{LogicalTypeID::NODE, LogicalTypeID::REL, LogicalTypeID::STRUCT});
-    if (ExpressionUtil::isNodeVariable(*child)) {
-        return bindNodePropertyExpression(*child, propertyName);
-    } else if (ExpressionUtil::isRelVariable(*child)) {
-        return bindRelPropertyExpression(*child, propertyName);
-    } else {
-        assert(child->expressionType == common::FUNCTION);
+    ExpressionUtil::validateDataType(*child,
+        std::vector<LogicalTypeID>{LogicalTypeID::NODE, LogicalTypeID::REL, LogicalTypeID::STRUCT,
+            LogicalTypeID::ANY});
+    if (bindOrderByAfterAggregation) {
+        // If a property is not in projection list but required in order by after aggregation,
+        // we need to bind it as struct extraction because node/rel must have been evaluated as
+        // struct during aggregate
+        // e.g. RETURN a, COUNT(*) ORDER BY a.ID
         return bindStructPropertyExpression(child, propertyName);
     }
+    if (isNodeOrRelPattern(*child)) {
+        if (Binder::reservedInPropertyLookup(propertyName)) {
+            // Note we don't expose direct access to internal properties in case user tries to
+            // modify them. However, we can expose indirect read-only access through function e.g.
+            // ID().
+            throw BinderException(
+                propertyName + " is reserved for system usage. External access is not allowed.");
+        }
+        return bindNodeOrRelPropertyExpression(*child, propertyName);
+    } else if (isStructPattern(*child)) {
+        return bindStructPropertyExpression(child, propertyName);
+    } else if (child->getDataType().getLogicalTypeID() == LogicalTypeID::ANY) {
+        return createVariableExpression(LogicalType::ANY(), binder->getUniqueExpressionName(""));
+    } else {
+        throw BinderException(stringFormat("Cannot bind property for expression {} with type {}.",
+            child->toString(), ExpressionTypeUtil::toString(child->expressionType)));
+    }
 }
 
-std::shared_ptr<Expression> ExpressionBinder::bindNodePropertyExpression(
+std::shared_ptr<Expression> ExpressionBinder::bindNodeOrRelPropertyExpression(
     const Expression& child, const std::string& propertyName) {
-    auto& node = (NodeExpression&)child;
-    if (!node.hasPropertyExpression(propertyName)) {
+    auto& nodeOrRel = child.constCast<NodeOrRelExpression>();
+    // TODO(Xiyang): we should be able to remove l97-l100 after removing propertyDataExprs from node
+    // & rel expression.
+    if (propertyName == InternalKeyword::ID &&
+        child.dataType.getLogicalTypeID() == common::LogicalTypeID::NODE) {
+        auto& node = ku_dynamic_cast<const NodeExpression&>(child);
+        return node.getInternalID();
+    }
+    if (!nodeOrRel.hasPropertyExpression(propertyName)) {
         throw BinderException(
             "Cannot find property " + propertyName + " for " + child.toString() + ".");
     }
-    return node.getPropertyExpression(propertyName);
-}
-
-std::shared_ptr<Expression> ExpressionBinder::bindRelPropertyExpression(
-    const Expression& child, const std::string& propertyName) {
-    auto& rel = (RelExpression&)child;
-    if (!rel.hasPropertyExpression(propertyName)) {
-        throw BinderException(
-            "Cannot find property " + propertyName + " for " + child.toString() + ".");
-    }
-    return rel.getPropertyExpression(propertyName);
+    return nodeOrRel.getPropertyExpression(propertyName);
 }
 
 std::shared_ptr<Expression> ExpressionBinder::bindStructPropertyExpression(
     std::shared_ptr<Expression> child, const std::string& propertyName) {
-    auto children =
-        expression_vector{std::move(child), createStringLiteralExpression(propertyName)};
-    return bindScalarFunctionExpression(children, STRUCT_EXTRACT_FUNC_NAME);
-}
-
-static void validatePropertiesWithSameDataType(const std::vector<Property>& properties,
-    const LogicalType& dataType, const std::string& propertyName, const std::string& variableName) {
-    auto propertyLookup = variableName + "." + propertyName;
-    for (auto& property : properties) {
-        if (property.dataType != dataType) {
-            throw BinderException(
-                StringUtils::string_format("Expect one data type for {} but find {} and {}",
-                    propertyLookup, LogicalTypeUtils::dataTypeToString(property.dataType),
-                    LogicalTypeUtils::dataTypeToString(dataType)));
-        }
-    }
-}
-
-static std::unordered_map<table_id_t, property_id_t> populatePropertyIDPerTable(
-    const std::vector<Property>& properties) {
-    std::unordered_map<table_id_t, property_id_t> propertyIDPerTable;
-    for (auto& property : properties) {
-        propertyIDPerTable.insert({property.tableID, property.propertyID});
-    }
-    return propertyIDPerTable;
-}
-
-std::unique_ptr<Expression> ExpressionBinder::createPropertyExpression(
-    const Expression& nodeOrRel, const std::vector<Property>& properties, bool isPrimaryKey) {
-    assert(!properties.empty());
-    auto anchorProperty = properties[0];
-    validatePropertiesWithSameDataType(
-        properties, anchorProperty.dataType, anchorProperty.name, nodeOrRel.toString());
-    return make_unique<PropertyExpression>(anchorProperty.dataType, anchorProperty.name, nodeOrRel,
-        populatePropertyIDPerTable(properties), isPrimaryKey);
+    auto children = expression_vector{std::move(child), createLiteralExpression(propertyName)};
+    return bindScalarFunctionExpression(children, function::StructExtractFunctions::name);
 }
 
 } // namespace binder

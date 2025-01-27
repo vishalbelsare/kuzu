@@ -5,24 +5,34 @@
 namespace kuzu {
 namespace binder {
 
-class PropertyCollector : public BoundStatementVisitor {
+// Collect all property expressions for a given statement.
+class PropertyCollector final : public BoundStatementVisitor {
 public:
-    PropertyCollector() : BoundStatementVisitor() {}
+    expression_vector getProperties() const;
 
-    expression_vector getProperties();
+    // Skip collecting node/rel properties if they are in WITH projection list.
+    // See with_clause_projection_rewriter for more details.
+    void visitSingleQuerySkipNodeRel(const NormalizedSingleQuery& singleQuery);
 
 private:
-    void visitMatch(const BoundReadingClause& readingClause) final;
-    void visitUnwind(const BoundReadingClause& readingClause) final;
+    void visitQueryPartSkipNodeRel(const NormalizedQueryPart& queryPart);
 
-    void visitSet(const BoundUpdatingClause& updatingClause) final;
-    void visitDelete(const BoundUpdatingClause& updatingClause) final;
-    void visitCreate(const BoundUpdatingClause& updatingClause) final;
+    void visitMatch(const BoundReadingClause& readingClause) override;
+    void visitUnwind(const BoundReadingClause& readingClause) override;
+    void visitLoadFrom(const BoundReadingClause& readingClause) override;
+    void visitTableFunctionCall(const BoundReadingClause&) override;
 
-    void visitProjectionBody(const BoundProjectionBody& projectionBody) final;
-    void visitProjectionBodyPredicate(const std::shared_ptr<Expression>& predicate) final;
+    void visitSet(const BoundUpdatingClause& updatingClause) override;
+    void visitDelete(const BoundUpdatingClause& updatingClause) override;
+    void visitInsert(const BoundUpdatingClause& updatingClause) override;
+    void visitMerge(const BoundUpdatingClause& updatingClause) override;
 
-    void collectPropertyExpressions(const std::shared_ptr<Expression>& expression);
+    void visitProjectionBodySkipNodeRel(const BoundProjectionBody& projectionBody);
+    void visitProjectionBody(const BoundProjectionBody& projectionBody) override;
+    void visitProjectionBodyPredicate(const std::shared_ptr<Expression>& predicate) override;
+
+    void collectProperties(const std::shared_ptr<Expression>& expression);
+    void collectPropertiesSkipNodeRel(const std::shared_ptr<Expression>& expression);
 
 private:
     expression_set properties;

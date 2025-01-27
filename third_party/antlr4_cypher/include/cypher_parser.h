@@ -1,5 +1,5 @@
 
-// Generated from Cypher.g4 by ANTLR 4.9
+// Generated from Cypher.g4 by ANTLR 4.13.1
 
 #pragma once
 
@@ -19,99 +19,157 @@ public:
     T__26 = 27, T__27 = 28, T__28 = 29, T__29 = 30, T__30 = 31, T__31 = 32, 
     T__32 = 33, T__33 = 34, T__34 = 35, T__35 = 36, T__36 = 37, T__37 = 38, 
     T__38 = 39, T__39 = 40, T__40 = 41, T__41 = 42, T__42 = 43, T__43 = 44, 
-    T__44 = 45, T__45 = 46, T__46 = 47, CALL = 48, MACRO = 49, GLOB = 50, 
-    COPY = 51, FROM = 52, NPY = 53, COLUMN = 54, NODE = 55, TABLE = 56, 
-    DROP = 57, ALTER = 58, DEFAULT = 59, RENAME = 60, ADD = 61, PRIMARY = 62, 
-    KEY = 63, REL = 64, TO = 65, EXPLAIN = 66, PROFILE = 67, UNION = 68, 
-    ALL = 69, OPTIONAL = 70, MATCH = 71, UNWIND = 72, CREATE = 73, MERGE = 74, 
-    ON = 75, SET = 76, DELETE = 77, WITH = 78, RETURN = 79, DISTINCT = 80, 
-    STAR = 81, AS = 82, ORDER = 83, BY = 84, L_SKIP = 85, LIMIT = 86, ASCENDING = 87, 
-    ASC = 88, DESCENDING = 89, DESC = 90, WHERE = 91, SHORTEST = 92, OR = 93, 
-    XOR = 94, AND = 95, NOT = 96, INVALID_NOT_EQUAL = 97, MINUS = 98, FACTORIAL = 99, 
-    STARTS = 100, ENDS = 101, CONTAINS = 102, IS = 103, NULL_ = 104, TRUE = 105, 
-    FALSE = 106, EXISTS = 107, CASE = 108, ELSE = 109, END = 110, WHEN = 111, 
-    THEN = 112, StringLiteral = 113, EscapedChar = 114, DecimalInteger = 115, 
-    HexLetter = 116, HexDigit = 117, Digit = 118, NonZeroDigit = 119, NonZeroOctDigit = 120, 
-    ZeroDigit = 121, RegularDecimalReal = 122, UnescapedSymbolicName = 123, 
-    IdentifierStart = 124, IdentifierPart = 125, EscapedSymbolicName = 126, 
-    SP = 127, WHITESPACE = 128, Comment = 129, Unknown = 130
+    T__44 = 45, ACYCLIC = 46, ANY = 47, ADD = 48, ALL = 49, ALTER = 50, 
+    AND = 51, AS = 52, ASC = 53, ASCENDING = 54, ATTACH = 55, BEGIN = 56, 
+    BY = 57, CALL = 58, CASE = 59, CAST = 60, CHECKPOINT = 61, COLUMN = 62, 
+    COMMENT = 63, COMMIT = 64, COMMIT_SKIP_CHECKPOINT = 65, CONTAINS = 66, 
+    COPY = 67, COUNT = 68, CREATE = 69, CYCLE = 70, DATABASE = 71, DBTYPE = 72, 
+    DEFAULT = 73, DELETE = 74, DESC = 75, DESCENDING = 76, DETACH = 77, 
+    DISTINCT = 78, DROP = 79, ELSE = 80, END = 81, ENDS = 82, EXISTS = 83, 
+    EXPLAIN = 84, EXPORT = 85, EXTENSION = 86, FALSE = 87, FROM = 88, GLOB = 89, 
+    GRAPH = 90, GROUP = 91, HEADERS = 92, HINT = 93, IMPORT = 94, IF = 95, 
+    IN = 96, INCREMENT = 97, INSTALL = 98, IS = 99, JOIN = 100, KEY = 101, 
+    LIMIT = 102, LOAD = 103, LOGICAL = 104, MACRO = 105, MATCH = 106, MAXVALUE = 107, 
+    MERGE = 108, MINVALUE = 109, MULTI_JOIN = 110, NO = 111, NODE = 112, 
+    NOT = 113, NONE = 114, NULL_ = 115, ON = 116, ONLY = 117, OPTIONAL = 118, 
+    OR = 119, ORDER = 120, PRIMARY = 121, PROFILE = 122, PROJECT = 123, 
+    READ = 124, REL = 125, RENAME = 126, RETURN = 127, ROLLBACK = 128, ROLLBACK_SKIP_CHECKPOINT = 129, 
+    SEQUENCE = 130, SET = 131, SHORTEST = 132, START = 133, STARTS = 134, 
+    TABLE = 135, THEN = 136, TO = 137, TRAIL = 138, TRANSACTION = 139, TRUE = 140, 
+    TYPE = 141, UNION = 142, UNWIND = 143, USE = 144, WHEN = 145, WHERE = 146, 
+    WITH = 147, WRITE = 148, WSHORTEST = 149, XOR = 150, SINGLE = 151, DECIMAL = 152, 
+    YIELD = 153, STAR = 154, L_SKIP = 155, INVALID_NOT_EQUAL = 156, MINUS = 157, 
+    FACTORIAL = 158, COLON = 159, StringLiteral = 160, EscapedChar = 161, 
+    DecimalInteger = 162, HexLetter = 163, HexDigit = 164, Digit = 165, 
+    NonZeroDigit = 166, NonZeroOctDigit = 167, ZeroDigit = 168, ExponentDecimalReal = 169, 
+    RegularDecimalReal = 170, UnescapedSymbolicName = 171, IdentifierStart = 172, 
+    IdentifierPart = 173, EscapedSymbolicName = 174, SP = 175, WHITESPACE = 176, 
+    CypherComment = 177, Unknown = 178
   };
 
   enum {
-    RuleOC_Cypher = 0, RuleKU_CopyCSV = 1, RuleKU_CopyNPY = 2, RuleKU_StandaloneCall = 3, 
-    RuleKU_CreateMacro = 4, RuleKU_PositionalArgs = 5, RuleKU_DefaultArg = 6, 
-    RuleKU_FilePaths = 7, RuleKU_ParsingOptions = 8, RuleKU_ParsingOption = 9, 
-    RuleKU_DDL = 10, RuleKU_CreateNode = 11, RuleKU_CreateRel = 12, RuleKU_DropTable = 13, 
-    RuleKU_AlterTable = 14, RuleKU_AlterOptions = 15, RuleKU_AddProperty = 16, 
-    RuleKU_DropProperty = 17, RuleKU_RenameTable = 18, RuleKU_RenameProperty = 19, 
-    RuleKU_PropertyDefinitions = 20, RuleKU_PropertyDefinition = 21, RuleKU_CreateNodeConstraint = 22, 
-    RuleKU_DataType = 23, RuleKU_ListIdentifiers = 24, RuleKU_ListIdentifier = 25, 
-    RuleOC_AnyCypherOption = 26, RuleOC_Explain = 27, RuleOC_Profile = 28, 
-    RuleOC_Statement = 29, RuleOC_Query = 30, RuleOC_RegularQuery = 31, 
-    RuleOC_Union = 32, RuleOC_SingleQuery = 33, RuleOC_SinglePartQuery = 34, 
-    RuleOC_MultiPartQuery = 35, RuleKU_QueryPart = 36, RuleOC_UpdatingClause = 37, 
-    RuleOC_ReadingClause = 38, RuleKU_InQueryCall = 39, RuleOC_Match = 40, 
-    RuleOC_Unwind = 41, RuleOC_Create = 42, RuleOC_Merge = 43, RuleOC_MergeAction = 44, 
-    RuleOC_Set = 45, RuleOC_SetItem = 46, RuleOC_Delete = 47, RuleOC_With = 48, 
-    RuleOC_Return = 49, RuleOC_ProjectionBody = 50, RuleOC_ProjectionItems = 51, 
-    RuleOC_ProjectionItem = 52, RuleOC_Order = 53, RuleOC_Skip = 54, RuleOC_Limit = 55, 
-    RuleOC_SortItem = 56, RuleOC_Where = 57, RuleOC_Pattern = 58, RuleOC_PatternPart = 59, 
-    RuleOC_AnonymousPatternPart = 60, RuleOC_PatternElement = 61, RuleOC_NodePattern = 62, 
-    RuleOC_PatternElementChain = 63, RuleOC_RelationshipPattern = 64, RuleOC_RelationshipDetail = 65, 
-    RuleKU_Properties = 66, RuleOC_RelationshipTypes = 67, RuleOC_NodeLabels = 68, 
-    RuleOC_NodeLabel = 69, RuleOC_RangeLiteral = 70, RuleOC_LabelName = 71, 
-    RuleOC_RelTypeName = 72, RuleOC_Expression = 73, RuleOC_OrExpression = 74, 
-    RuleOC_XorExpression = 75, RuleOC_AndExpression = 76, RuleOC_NotExpression = 77, 
-    RuleOC_ComparisonExpression = 78, RuleKU_ComparisonOperator = 79, RuleKU_BitwiseOrOperatorExpression = 80, 
-    RuleKU_BitwiseAndOperatorExpression = 81, RuleKU_BitShiftOperatorExpression = 82, 
-    RuleKU_BitShiftOperator = 83, RuleOC_AddOrSubtractExpression = 84, RuleKU_AddOrSubtractOperator = 85, 
-    RuleOC_MultiplyDivideModuloExpression = 86, RuleKU_MultiplyDivideModuloOperator = 87, 
-    RuleOC_PowerOfExpression = 88, RuleOC_UnaryAddSubtractOrFactorialExpression = 89, 
-    RuleOC_StringListNullOperatorExpression = 90, RuleOC_ListOperatorExpression = 91, 
-    RuleKU_ListExtractOperatorExpression = 92, RuleKU_ListSliceOperatorExpression = 93, 
-    RuleOC_StringOperatorExpression = 94, RuleOC_RegularExpression = 95, 
-    RuleOC_NullOperatorExpression = 96, RuleOC_PropertyOrLabelsExpression = 97, 
-    RuleOC_Atom = 98, RuleOC_Literal = 99, RuleOC_BooleanLiteral = 100, 
-    RuleOC_ListLiteral = 101, RuleKU_StructLiteral = 102, RuleKU_StructField = 103, 
-    RuleOC_ParenthesizedExpression = 104, RuleOC_FunctionInvocation = 105, 
-    RuleOC_FunctionName = 106, RuleKU_FunctionParameter = 107, RuleOC_ExistentialSubquery = 108, 
-    RuleOC_PropertyLookup = 109, RuleOC_CaseExpression = 110, RuleOC_CaseAlternative = 111, 
-    RuleOC_Variable = 112, RuleOC_NumberLiteral = 113, RuleOC_Parameter = 114, 
-    RuleOC_PropertyExpression = 115, RuleOC_PropertyKeyName = 116, RuleOC_IntegerLiteral = 117, 
-    RuleOC_DoubleLiteral = 118, RuleOC_SchemaName = 119, RuleOC_SymbolicName = 120, 
-    RuleOC_LeftArrowHead = 121, RuleOC_RightArrowHead = 122, RuleOC_Dash = 123
+    RuleKu_Statements = 0, RuleOC_Cypher = 1, RuleOC_Statement = 2, RuleKU_CopyFrom = 3, 
+    RuleKU_ColumnNames = 4, RuleKU_ScanSource = 5, RuleKU_CopyFromByColumn = 6, 
+    RuleKU_CopyTO = 7, RuleKU_ExportDatabase = 8, RuleKU_ImportDatabase = 9, 
+    RuleKU_AttachDatabase = 10, RuleKU_Option = 11, RuleKU_Options = 12, 
+    RuleKU_DetachDatabase = 13, RuleKU_UseDatabase = 14, RuleKU_StandaloneCall = 15, 
+    RuleKU_CommentOn = 16, RuleKU_CreateMacro = 17, RuleKU_PositionalArgs = 18, 
+    RuleKU_DefaultArg = 19, RuleKU_FilePaths = 20, RuleKU_IfNotExists = 21, 
+    RuleKU_CreateNodeTable = 22, RuleKU_CreateRelTable = 23, RuleKU_FromToConnections = 24, 
+    RuleKU_FromToConnection = 25, RuleKU_CreateSequence = 26, RuleKU_CreateType = 27, 
+    RuleKU_SequenceOptions = 28, RuleKU_IncrementBy = 29, RuleKU_MinValue = 30, 
+    RuleKU_MaxValue = 31, RuleKU_StartWith = 32, RuleKU_Cycle = 33, RuleKU_IfExists = 34, 
+    RuleKU_Drop = 35, RuleKU_AlterTable = 36, RuleKU_AlterOptions = 37, 
+    RuleKU_AddProperty = 38, RuleKU_Default = 39, RuleKU_DropProperty = 40, 
+    RuleKU_RenameTable = 41, RuleKU_RenameProperty = 42, RuleKU_ColumnDefinitions = 43, 
+    RuleKU_ColumnDefinition = 44, RuleKU_PropertyDefinitions = 45, RuleKU_PropertyDefinition = 46, 
+    RuleKU_CreateNodeConstraint = 47, RuleKU_DataType = 48, RuleKU_ListIdentifiers = 49, 
+    RuleKU_ListIdentifier = 50, RuleOC_AnyCypherOption = 51, RuleOC_Explain = 52, 
+    RuleOC_Profile = 53, RuleKU_Transaction = 54, RuleKU_Extension = 55, 
+    RuleKU_LoadExtension = 56, RuleKU_InstallExtension = 57, RuleOC_Query = 58, 
+    RuleOC_RegularQuery = 59, RuleOC_Union = 60, RuleOC_SingleQuery = 61, 
+    RuleOC_SinglePartQuery = 62, RuleOC_MultiPartQuery = 63, RuleKU_QueryPart = 64, 
+    RuleOC_UpdatingClause = 65, RuleOC_ReadingClause = 66, RuleKU_LoadFrom = 67, 
+    RuleOC_YieldItem = 68, RuleOC_YieldItems = 69, RuleKU_InQueryCall = 70, 
+    RuleOC_Match = 71, RuleKU_Hint = 72, RuleKU_JoinNode = 73, RuleOC_Unwind = 74, 
+    RuleOC_Create = 75, RuleOC_Merge = 76, RuleOC_MergeAction = 77, RuleOC_Set = 78, 
+    RuleOC_SetItem = 79, RuleOC_Delete = 80, RuleOC_With = 81, RuleOC_Return = 82, 
+    RuleOC_ProjectionBody = 83, RuleOC_ProjectionItems = 84, RuleOC_ProjectionItem = 85, 
+    RuleOC_Order = 86, RuleOC_Skip = 87, RuleOC_Limit = 88, RuleOC_SortItem = 89, 
+    RuleOC_Where = 90, RuleOC_Pattern = 91, RuleOC_PatternPart = 92, RuleOC_AnonymousPatternPart = 93, 
+    RuleOC_PatternElement = 94, RuleOC_NodePattern = 95, RuleOC_PatternElementChain = 96, 
+    RuleOC_RelationshipPattern = 97, RuleOC_RelationshipDetail = 98, RuleKU_Properties = 99, 
+    RuleOC_RelationshipTypes = 100, RuleOC_NodeLabels = 101, RuleOC_NodeLabel = 102, 
+    RuleKU_RecursiveDetail = 103, RuleKU_RecursiveType = 104, RuleOC_RangeLiteral = 105, 
+    RuleKU_RecursiveComprehension = 106, RuleKU_RecursiveProjectionItems = 107, 
+    RuleOC_LowerBound = 108, RuleOC_UpperBound = 109, RuleOC_LabelName = 110, 
+    RuleOC_RelTypeName = 111, RuleOC_Expression = 112, RuleOC_OrExpression = 113, 
+    RuleOC_XorExpression = 114, RuleOC_AndExpression = 115, RuleOC_NotExpression = 116, 
+    RuleOC_ComparisonExpression = 117, RuleKU_ComparisonOperator = 118, 
+    RuleKU_BitwiseOrOperatorExpression = 119, RuleKU_BitwiseAndOperatorExpression = 120, 
+    RuleKU_BitShiftOperatorExpression = 121, RuleKU_BitShiftOperator = 122, 
+    RuleOC_AddOrSubtractExpression = 123, RuleKU_AddOrSubtractOperator = 124, 
+    RuleOC_MultiplyDivideModuloExpression = 125, RuleKU_MultiplyDivideModuloOperator = 126, 
+    RuleOC_PowerOfExpression = 127, RuleOC_UnaryAddSubtractOrFactorialExpression = 128, 
+    RuleOC_StringListNullOperatorExpression = 129, RuleOC_ListOperatorExpression = 130, 
+    RuleOC_StringOperatorExpression = 131, RuleOC_RegularExpression = 132, 
+    RuleOC_NullOperatorExpression = 133, RuleOC_PropertyOrLabelsExpression = 134, 
+    RuleOC_Atom = 135, RuleOC_Quantifier = 136, RuleOC_FilterExpression = 137, 
+    RuleOC_IdInColl = 138, RuleOC_Literal = 139, RuleOC_BooleanLiteral = 140, 
+    RuleOC_ListLiteral = 141, RuleKU_ListEntry = 142, RuleKU_StructLiteral = 143, 
+    RuleKU_StructField = 144, RuleOC_ParenthesizedExpression = 145, RuleOC_FunctionInvocation = 146, 
+    RuleOC_FunctionName = 147, RuleKU_FunctionParameter = 148, RuleKU_LambdaParameter = 149, 
+    RuleKU_LambdaVars = 150, RuleOC_PathPatterns = 151, RuleOC_ExistSubquery = 152, 
+    RuleKU_CountSubquery = 153, RuleOC_PropertyLookup = 154, RuleOC_CaseExpression = 155, 
+    RuleOC_CaseAlternative = 156, RuleOC_Variable = 157, RuleOC_NumberLiteral = 158, 
+    RuleOC_Parameter = 159, RuleOC_PropertyExpression = 160, RuleOC_PropertyKeyName = 161, 
+    RuleOC_IntegerLiteral = 162, RuleOC_DoubleLiteral = 163, RuleOC_SchemaName = 164, 
+    RuleOC_SymbolicName = 165, RuleKU_NonReservedKeywords = 166, RuleOC_LeftArrowHead = 167, 
+    RuleOC_RightArrowHead = 168, RuleOC_Dash = 169
   };
 
   explicit CypherParser(antlr4::TokenStream *input);
-  ~CypherParser();
 
-  virtual std::string getGrammarFileName() const override;
-  virtual const antlr4::atn::ATN& getATN() const override { return _atn; };
-  virtual const std::vector<std::string>& getTokenNames() const override { return _tokenNames; }; // deprecated: use vocabulary instead.
-  virtual const std::vector<std::string>& getRuleNames() const override;
-  virtual antlr4::dfa::Vocabulary& getVocabulary() const override;
+  CypherParser(antlr4::TokenStream *input, const antlr4::atn::ParserATNSimulatorOptions &options);
+
+  ~CypherParser() override;
+
+  std::string getGrammarFileName() const override;
+
+  const antlr4::atn::ATN& getATN() const override;
+
+  const std::vector<std::string>& getRuleNames() const override;
+
+  const antlr4::dfa::Vocabulary& getVocabulary() const override;
+
+  antlr4::atn::SerializedATNView getSerializedATN() const override;
 
 
+  class Ku_StatementsContext;
   class OC_CypherContext;
-  class KU_CopyCSVContext;
-  class KU_CopyNPYContext;
+  class OC_StatementContext;
+  class KU_CopyFromContext;
+  class KU_ColumnNamesContext;
+  class KU_ScanSourceContext;
+  class KU_CopyFromByColumnContext;
+  class KU_CopyTOContext;
+  class KU_ExportDatabaseContext;
+  class KU_ImportDatabaseContext;
+  class KU_AttachDatabaseContext;
+  class KU_OptionContext;
+  class KU_OptionsContext;
+  class KU_DetachDatabaseContext;
+  class KU_UseDatabaseContext;
   class KU_StandaloneCallContext;
+  class KU_CommentOnContext;
   class KU_CreateMacroContext;
   class KU_PositionalArgsContext;
   class KU_DefaultArgContext;
   class KU_FilePathsContext;
-  class KU_ParsingOptionsContext;
-  class KU_ParsingOptionContext;
-  class KU_DDLContext;
-  class KU_CreateNodeContext;
-  class KU_CreateRelContext;
-  class KU_DropTableContext;
+  class KU_IfNotExistsContext;
+  class KU_CreateNodeTableContext;
+  class KU_CreateRelTableContext;
+  class KU_FromToConnectionsContext;
+  class KU_FromToConnectionContext;
+  class KU_CreateSequenceContext;
+  class KU_CreateTypeContext;
+  class KU_SequenceOptionsContext;
+  class KU_IncrementByContext;
+  class KU_MinValueContext;
+  class KU_MaxValueContext;
+  class KU_StartWithContext;
+  class KU_CycleContext;
+  class KU_IfExistsContext;
+  class KU_DropContext;
   class KU_AlterTableContext;
   class KU_AlterOptionsContext;
   class KU_AddPropertyContext;
+  class KU_DefaultContext;
   class KU_DropPropertyContext;
   class KU_RenameTableContext;
   class KU_RenamePropertyContext;
+  class KU_ColumnDefinitionsContext;
+  class KU_ColumnDefinitionContext;
   class KU_PropertyDefinitionsContext;
   class KU_PropertyDefinitionContext;
   class KU_CreateNodeConstraintContext;
@@ -121,7 +179,10 @@ public:
   class OC_AnyCypherOptionContext;
   class OC_ExplainContext;
   class OC_ProfileContext;
-  class OC_StatementContext;
+  class KU_TransactionContext;
+  class KU_ExtensionContext;
+  class KU_LoadExtensionContext;
+  class KU_InstallExtensionContext;
   class OC_QueryContext;
   class OC_RegularQueryContext;
   class OC_UnionContext;
@@ -131,8 +192,13 @@ public:
   class KU_QueryPartContext;
   class OC_UpdatingClauseContext;
   class OC_ReadingClauseContext;
+  class KU_LoadFromContext;
+  class OC_YieldItemContext;
+  class OC_YieldItemsContext;
   class KU_InQueryCallContext;
   class OC_MatchContext;
+  class KU_HintContext;
+  class KU_JoinNodeContext;
   class OC_UnwindContext;
   class OC_CreateContext;
   class OC_MergeContext;
@@ -162,7 +228,13 @@ public:
   class OC_RelationshipTypesContext;
   class OC_NodeLabelsContext;
   class OC_NodeLabelContext;
+  class KU_RecursiveDetailContext;
+  class KU_RecursiveTypeContext;
   class OC_RangeLiteralContext;
+  class KU_RecursiveComprehensionContext;
+  class KU_RecursiveProjectionItemsContext;
+  class OC_LowerBoundContext;
+  class OC_UpperBoundContext;
   class OC_LabelNameContext;
   class OC_RelTypeNameContext;
   class OC_ExpressionContext;
@@ -184,23 +256,29 @@ public:
   class OC_UnaryAddSubtractOrFactorialExpressionContext;
   class OC_StringListNullOperatorExpressionContext;
   class OC_ListOperatorExpressionContext;
-  class KU_ListExtractOperatorExpressionContext;
-  class KU_ListSliceOperatorExpressionContext;
   class OC_StringOperatorExpressionContext;
   class OC_RegularExpressionContext;
   class OC_NullOperatorExpressionContext;
   class OC_PropertyOrLabelsExpressionContext;
   class OC_AtomContext;
+  class OC_QuantifierContext;
+  class OC_FilterExpressionContext;
+  class OC_IdInCollContext;
   class OC_LiteralContext;
   class OC_BooleanLiteralContext;
   class OC_ListLiteralContext;
+  class KU_ListEntryContext;
   class KU_StructLiteralContext;
   class KU_StructFieldContext;
   class OC_ParenthesizedExpressionContext;
   class OC_FunctionInvocationContext;
   class OC_FunctionNameContext;
   class KU_FunctionParameterContext;
-  class OC_ExistentialSubqueryContext;
+  class KU_LambdaParameterContext;
+  class KU_LambdaVarsContext;
+  class OC_PathPatternsContext;
+  class OC_ExistSubqueryContext;
+  class KU_CountSubqueryContext;
   class OC_PropertyLookupContext;
   class OC_CaseExpressionContext;
   class OC_CaseAlternativeContext;
@@ -213,45 +291,121 @@ public:
   class OC_DoubleLiteralContext;
   class OC_SchemaNameContext;
   class OC_SymbolicNameContext;
+  class KU_NonReservedKeywordsContext;
   class OC_LeftArrowHeadContext;
   class OC_RightArrowHeadContext;
   class OC_DashContext; 
+
+  class  Ku_StatementsContext : public antlr4::ParserRuleContext {
+  public:
+    Ku_StatementsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_CypherContext *> oC_Cypher();
+    OC_CypherContext* oC_Cypher(size_t i);
+    antlr4::tree::TerminalNode *EOF();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  Ku_StatementsContext* ku_Statements();
 
   class  OC_CypherContext : public antlr4::ParserRuleContext {
   public:
     OC_CypherContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    antlr4::tree::TerminalNode *EOF();
     OC_StatementContext *oC_Statement();
+    OC_AnyCypherOptionContext *oC_AnyCypherOption();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
-    OC_AnyCypherOptionContext *oC_AnyCypherOption();
 
    
   };
 
   OC_CypherContext* oC_Cypher();
 
-  class  KU_CopyCSVContext : public antlr4::ParserRuleContext {
+  class  OC_StatementContext : public antlr4::ParserRuleContext {
   public:
-    KU_CopyCSVContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    OC_StatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_QueryContext *oC_Query();
+    KU_CreateNodeTableContext *kU_CreateNodeTable();
+    KU_CreateRelTableContext *kU_CreateRelTable();
+    KU_CreateSequenceContext *kU_CreateSequence();
+    KU_CreateTypeContext *kU_CreateType();
+    KU_DropContext *kU_Drop();
+    KU_AlterTableContext *kU_AlterTable();
+    KU_CopyFromContext *kU_CopyFrom();
+    KU_CopyFromByColumnContext *kU_CopyFromByColumn();
+    KU_CopyTOContext *kU_CopyTO();
+    KU_StandaloneCallContext *kU_StandaloneCall();
+    KU_CreateMacroContext *kU_CreateMacro();
+    KU_CommentOnContext *kU_CommentOn();
+    KU_TransactionContext *kU_Transaction();
+    KU_ExtensionContext *kU_Extension();
+    KU_ExportDatabaseContext *kU_ExportDatabase();
+    KU_ImportDatabaseContext *kU_ImportDatabase();
+    KU_AttachDatabaseContext *kU_AttachDatabase();
+    KU_DetachDatabaseContext *kU_DetachDatabase();
+    KU_UseDatabaseContext *kU_UseDatabase();
+
+   
+  };
+
+  OC_StatementContext* oC_Statement();
+
+  class  KU_CopyFromContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CopyFromContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *COPY();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_SchemaNameContext *oC_SchemaName();
     antlr4::tree::TerminalNode *FROM();
-    KU_FilePathsContext *kU_FilePaths();
-    KU_ParsingOptionsContext *kU_ParsingOptions();
+    KU_ScanSourceContext *kU_ScanSource();
+    KU_OptionsContext *kU_Options();
+    KU_ColumnNamesContext *kU_ColumnNames();
 
    
   };
 
-  KU_CopyCSVContext* kU_CopyCSV();
+  KU_CopyFromContext* kU_CopyFrom();
 
-  class  KU_CopyNPYContext : public antlr4::ParserRuleContext {
+  class  KU_ColumnNamesContext : public antlr4::ParserRuleContext {
   public:
-    KU_CopyNPYContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_ColumnNamesContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_SchemaNameContext *> oC_SchemaName();
+    OC_SchemaNameContext* oC_SchemaName(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_ColumnNamesContext* kU_ColumnNames();
+
+  class  KU_ScanSourceContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ScanSourceContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    KU_FilePathsContext *kU_FilePaths();
+    OC_QueryContext *oC_Query();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_VariableContext *oC_Variable();
+    OC_SchemaNameContext *oC_SchemaName();
+
+   
+  };
+
+  KU_ScanSourceContext* kU_ScanSource();
+
+  class  KU_CopyFromByColumnContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CopyFromByColumnContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *COPY();
     std::vector<antlr4::tree::TerminalNode *> SP();
@@ -266,7 +420,128 @@ public:
    
   };
 
-  KU_CopyNPYContext* kU_CopyNPY();
+  KU_CopyFromByColumnContext* kU_CopyFromByColumn();
+
+  class  KU_CopyTOContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CopyTOContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COPY();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_QueryContext *oC_Query();
+    antlr4::tree::TerminalNode *TO();
+    antlr4::tree::TerminalNode *StringLiteral();
+    KU_OptionsContext *kU_Options();
+
+   
+  };
+
+  KU_CopyTOContext* kU_CopyTO();
+
+  class  KU_ExportDatabaseContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ExportDatabaseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *EXPORT();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *DATABASE();
+    antlr4::tree::TerminalNode *StringLiteral();
+    KU_OptionsContext *kU_Options();
+
+   
+  };
+
+  KU_ExportDatabaseContext* kU_ExportDatabase();
+
+  class  KU_ImportDatabaseContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ImportDatabaseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IMPORT();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *DATABASE();
+    antlr4::tree::TerminalNode *StringLiteral();
+
+   
+  };
+
+  KU_ImportDatabaseContext* kU_ImportDatabase();
+
+  class  KU_AttachDatabaseContext : public antlr4::ParserRuleContext {
+  public:
+    KU_AttachDatabaseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ATTACH();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *StringLiteral();
+    antlr4::tree::TerminalNode *DBTYPE();
+    OC_SymbolicNameContext *oC_SymbolicName();
+    antlr4::tree::TerminalNode *AS();
+    OC_SchemaNameContext *oC_SchemaName();
+    KU_OptionsContext *kU_Options();
+
+   
+  };
+
+  KU_AttachDatabaseContext* kU_AttachDatabase();
+
+  class  KU_OptionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_OptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_SymbolicNameContext *oC_SymbolicName();
+    OC_LiteralContext *oC_Literal();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_OptionContext* kU_Option();
+
+  class  KU_OptionsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_OptionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<KU_OptionContext *> kU_Option();
+    KU_OptionContext* kU_Option(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_OptionsContext* kU_Options();
+
+  class  KU_DetachDatabaseContext : public antlr4::ParserRuleContext {
+  public:
+    KU_DetachDatabaseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *DETACH();
+    antlr4::tree::TerminalNode *SP();
+    OC_SchemaNameContext *oC_SchemaName();
+
+   
+  };
+
+  KU_DetachDatabaseContext* kU_DetachDatabase();
+
+  class  KU_UseDatabaseContext : public antlr4::ParserRuleContext {
+  public:
+    KU_UseDatabaseContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *USE();
+    antlr4::tree::TerminalNode *SP();
+    OC_SchemaNameContext *oC_SchemaName();
+
+   
+  };
+
+  KU_UseDatabaseContext* kU_UseDatabase();
 
   class  KU_StandaloneCallContext : public antlr4::ParserRuleContext {
   public:
@@ -276,12 +551,31 @@ public:
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_SymbolicNameContext *oC_SymbolicName();
-    OC_LiteralContext *oC_Literal();
+    OC_ExpressionContext *oC_Expression();
+    OC_FunctionInvocationContext *oC_FunctionInvocation();
 
    
   };
 
   KU_StandaloneCallContext* kU_StandaloneCall();
+
+  class  KU_CommentOnContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CommentOnContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COMMENT();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *ON();
+    antlr4::tree::TerminalNode *TABLE();
+    OC_SchemaNameContext *oC_SchemaName();
+    antlr4::tree::TerminalNode *IS();
+    antlr4::tree::TerminalNode *StringLiteral();
+
+   
+  };
+
+  KU_CommentOnContext* kU_CommentOn();
 
   class  KU_CreateMacroContext : public antlr4::ParserRuleContext {
   public:
@@ -322,6 +616,7 @@ public:
     KU_DefaultArgContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     OC_SymbolicNameContext *oC_SymbolicName();
+    antlr4::tree::TerminalNode *COLON();
     OC_LiteralContext *oC_Literal();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
@@ -346,51 +641,24 @@ public:
 
   KU_FilePathsContext* kU_FilePaths();
 
-  class  KU_ParsingOptionsContext : public antlr4::ParserRuleContext {
+  class  KU_IfNotExistsContext : public antlr4::ParserRuleContext {
   public:
-    KU_ParsingOptionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_IfNotExistsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    std::vector<KU_ParsingOptionContext *> kU_ParsingOption();
-    KU_ParsingOptionContext* kU_ParsingOption(size_t i);
+    antlr4::tree::TerminalNode *IF();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *NOT();
+    antlr4::tree::TerminalNode *EXISTS();
 
    
   };
 
-  KU_ParsingOptionsContext* kU_ParsingOptions();
+  KU_IfNotExistsContext* kU_IfNotExists();
 
-  class  KU_ParsingOptionContext : public antlr4::ParserRuleContext {
+  class  KU_CreateNodeTableContext : public antlr4::ParserRuleContext {
   public:
-    KU_ParsingOptionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    OC_SymbolicNameContext *oC_SymbolicName();
-    OC_LiteralContext *oC_Literal();
-    std::vector<antlr4::tree::TerminalNode *> SP();
-    antlr4::tree::TerminalNode* SP(size_t i);
-
-   
-  };
-
-  KU_ParsingOptionContext* kU_ParsingOption();
-
-  class  KU_DDLContext : public antlr4::ParserRuleContext {
-  public:
-    KU_DDLContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    KU_CreateNodeContext *kU_CreateNode();
-    KU_CreateRelContext *kU_CreateRel();
-    KU_DropTableContext *kU_DropTable();
-    KU_AlterTableContext *kU_AlterTable();
-
-   
-  };
-
-  KU_DDLContext* kU_DDL();
-
-  class  KU_CreateNodeContext : public antlr4::ParserRuleContext {
-  public:
-    KU_CreateNodeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_CreateNodeTableContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *CREATE();
     std::vector<antlr4::tree::TerminalNode *> SP();
@@ -399,48 +667,221 @@ public:
     antlr4::tree::TerminalNode *TABLE();
     OC_SchemaNameContext *oC_SchemaName();
     KU_PropertyDefinitionsContext *kU_PropertyDefinitions();
+    KU_IfNotExistsContext *kU_IfNotExists();
     KU_CreateNodeConstraintContext *kU_CreateNodeConstraint();
 
    
   };
 
-  KU_CreateNodeContext* kU_CreateNode();
+  KU_CreateNodeTableContext* kU_CreateNodeTable();
 
-  class  KU_CreateRelContext : public antlr4::ParserRuleContext {
+  class  KU_CreateRelTableContext : public antlr4::ParserRuleContext {
   public:
-    KU_CreateRelContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_CreateRelTableContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *CREATE();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     antlr4::tree::TerminalNode *REL();
     antlr4::tree::TerminalNode *TABLE();
-    std::vector<OC_SchemaNameContext *> oC_SchemaName();
-    OC_SchemaNameContext* oC_SchemaName(size_t i);
-    antlr4::tree::TerminalNode *FROM();
-    antlr4::tree::TerminalNode *TO();
+    OC_SchemaNameContext *oC_SchemaName();
+    KU_FromToConnectionsContext *kU_FromToConnections();
+    antlr4::tree::TerminalNode *GROUP();
+    KU_IfNotExistsContext *kU_IfNotExists();
     KU_PropertyDefinitionsContext *kU_PropertyDefinitions();
     OC_SymbolicNameContext *oC_SymbolicName();
+    antlr4::tree::TerminalNode *WITH();
+    KU_OptionsContext *kU_Options();
 
    
   };
 
-  KU_CreateRelContext* kU_CreateRel();
+  KU_CreateRelTableContext* kU_CreateRelTable();
 
-  class  KU_DropTableContext : public antlr4::ParserRuleContext {
+  class  KU_FromToConnectionsContext : public antlr4::ParserRuleContext {
   public:
-    KU_DropTableContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_FromToConnectionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<KU_FromToConnectionContext *> kU_FromToConnection();
+    KU_FromToConnectionContext* kU_FromToConnection(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_FromToConnectionsContext* kU_FromToConnections();
+
+  class  KU_FromToConnectionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_FromToConnectionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *FROM();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    std::vector<OC_SchemaNameContext *> oC_SchemaName();
+    OC_SchemaNameContext* oC_SchemaName(size_t i);
+    antlr4::tree::TerminalNode *TO();
+
+   
+  };
+
+  KU_FromToConnectionContext* kU_FromToConnection();
+
+  class  KU_CreateSequenceContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CreateSequenceContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *CREATE();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *SEQUENCE();
+    OC_SchemaNameContext *oC_SchemaName();
+    KU_IfNotExistsContext *kU_IfNotExists();
+    std::vector<KU_SequenceOptionsContext *> kU_SequenceOptions();
+    KU_SequenceOptionsContext* kU_SequenceOptions(size_t i);
+
+   
+  };
+
+  KU_CreateSequenceContext* kU_CreateSequence();
+
+  class  KU_CreateTypeContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CreateTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *CREATE();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *TYPE();
+    OC_SchemaNameContext *oC_SchemaName();
+    antlr4::tree::TerminalNode *AS();
+    KU_DataTypeContext *kU_DataType();
+
+   
+  };
+
+  KU_CreateTypeContext* kU_CreateType();
+
+  class  KU_SequenceOptionsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_SequenceOptionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    KU_IncrementByContext *kU_IncrementBy();
+    KU_MinValueContext *kU_MinValue();
+    KU_MaxValueContext *kU_MaxValue();
+    KU_StartWithContext *kU_StartWith();
+    KU_CycleContext *kU_Cycle();
+
+   
+  };
+
+  KU_SequenceOptionsContext* kU_SequenceOptions();
+
+  class  KU_IncrementByContext : public antlr4::ParserRuleContext {
+  public:
+    KU_IncrementByContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *INCREMENT();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_IntegerLiteralContext *oC_IntegerLiteral();
+    antlr4::tree::TerminalNode *BY();
+    antlr4::tree::TerminalNode *MINUS();
+
+   
+  };
+
+  KU_IncrementByContext* kU_IncrementBy();
+
+  class  KU_MinValueContext : public antlr4::ParserRuleContext {
+  public:
+    KU_MinValueContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *NO();
+    antlr4::tree::TerminalNode *SP();
+    antlr4::tree::TerminalNode *MINVALUE();
+    OC_IntegerLiteralContext *oC_IntegerLiteral();
+    antlr4::tree::TerminalNode *MINUS();
+
+   
+  };
+
+  KU_MinValueContext* kU_MinValue();
+
+  class  KU_MaxValueContext : public antlr4::ParserRuleContext {
+  public:
+    KU_MaxValueContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *NO();
+    antlr4::tree::TerminalNode *SP();
+    antlr4::tree::TerminalNode *MAXVALUE();
+    OC_IntegerLiteralContext *oC_IntegerLiteral();
+    antlr4::tree::TerminalNode *MINUS();
+
+   
+  };
+
+  KU_MaxValueContext* kU_MaxValue();
+
+  class  KU_StartWithContext : public antlr4::ParserRuleContext {
+  public:
+    KU_StartWithContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *START();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_IntegerLiteralContext *oC_IntegerLiteral();
+    antlr4::tree::TerminalNode *WITH();
+    antlr4::tree::TerminalNode *MINUS();
+
+   
+  };
+
+  KU_StartWithContext* kU_StartWith();
+
+  class  KU_CycleContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CycleContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *CYCLE();
+    antlr4::tree::TerminalNode *NO();
+    antlr4::tree::TerminalNode *SP();
+
+   
+  };
+
+  KU_CycleContext* kU_Cycle();
+
+  class  KU_IfExistsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_IfExistsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *SP();
+    antlr4::tree::TerminalNode *EXISTS();
+
+   
+  };
+
+  KU_IfExistsContext* kU_IfExists();
+
+  class  KU_DropContext : public antlr4::ParserRuleContext {
+  public:
+    KU_DropContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *DROP();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
-    antlr4::tree::TerminalNode *TABLE();
     OC_SchemaNameContext *oC_SchemaName();
+    antlr4::tree::TerminalNode *TABLE();
+    antlr4::tree::TerminalNode *SEQUENCE();
+    KU_IfExistsContext *kU_IfExists();
 
    
   };
 
-  KU_DropTableContext* kU_DropTable();
+  KU_DropContext* kU_Drop();
 
   class  KU_AlterTableContext : public antlr4::ParserRuleContext {
   public:
@@ -481,21 +922,36 @@ public:
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_PropertyKeyNameContext *oC_PropertyKeyName();
     KU_DataTypeContext *kU_DataType();
-    antlr4::tree::TerminalNode *DEFAULT();
-    OC_ExpressionContext *oC_Expression();
+    KU_IfNotExistsContext *kU_IfNotExists();
+    KU_DefaultContext *kU_Default();
 
    
   };
 
   KU_AddPropertyContext* kU_AddProperty();
 
+  class  KU_DefaultContext : public antlr4::ParserRuleContext {
+  public:
+    KU_DefaultContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *DEFAULT();
+    antlr4::tree::TerminalNode *SP();
+    OC_ExpressionContext *oC_Expression();
+
+   
+  };
+
+  KU_DefaultContext* kU_Default();
+
   class  KU_DropPropertyContext : public antlr4::ParserRuleContext {
   public:
     KU_DropPropertyContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *DROP();
-    antlr4::tree::TerminalNode *SP();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
     OC_PropertyKeyNameContext *oC_PropertyKeyName();
+    KU_IfExistsContext *kU_IfExists();
 
    
   };
@@ -533,6 +989,33 @@ public:
 
   KU_RenamePropertyContext* kU_RenameProperty();
 
+  class  KU_ColumnDefinitionsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ColumnDefinitionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<KU_ColumnDefinitionContext *> kU_ColumnDefinition();
+    KU_ColumnDefinitionContext* kU_ColumnDefinition(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_ColumnDefinitionsContext* kU_ColumnDefinitions();
+
+  class  KU_ColumnDefinitionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ColumnDefinitionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_PropertyKeyNameContext *oC_PropertyKeyName();
+    antlr4::tree::TerminalNode *SP();
+    KU_DataTypeContext *kU_DataType();
+
+   
+  };
+
+  KU_ColumnDefinitionContext* kU_ColumnDefinition();
+
   class  KU_PropertyDefinitionsContext : public antlr4::ParserRuleContext {
   public:
     KU_PropertyDefinitionsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -551,9 +1034,12 @@ public:
   public:
     KU_PropertyDefinitionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    OC_PropertyKeyNameContext *oC_PropertyKeyName();
-    antlr4::tree::TerminalNode *SP();
-    KU_DataTypeContext *kU_DataType();
+    KU_ColumnDefinitionContext *kU_ColumnDefinition();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    KU_DefaultContext *kU_Default();
+    antlr4::tree::TerminalNode *PRIMARY();
+    antlr4::tree::TerminalNode *KEY();
 
    
   };
@@ -580,16 +1066,22 @@ public:
     KU_DataTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     OC_SymbolicNameContext *oC_SymbolicName();
-    KU_ListIdentifiersContext *kU_ListIdentifiers();
-    KU_PropertyDefinitionsContext *kU_PropertyDefinitions();
+    antlr4::tree::TerminalNode *UNION();
+    KU_ColumnDefinitionsContext *kU_ColumnDefinitions();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
+    std::vector<KU_DataTypeContext *> kU_DataType();
+    KU_DataTypeContext* kU_DataType(size_t i);
+    antlr4::tree::TerminalNode *DECIMAL();
+    std::vector<OC_IntegerLiteralContext *> oC_IntegerLiteral();
+    OC_IntegerLiteralContext* oC_IntegerLiteral(size_t i);
+    KU_ListIdentifiersContext *kU_ListIdentifiers();
 
    
   };
 
   KU_DataTypeContext* kU_DataType();
-
+  KU_DataTypeContext* kU_DataType(int precedence);
   class  KU_ListIdentifiersContext : public antlr4::ParserRuleContext {
   public:
     KU_ListIdentifiersContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -630,6 +1122,8 @@ public:
     OC_ExplainContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *EXPLAIN();
+    antlr4::tree::TerminalNode *SP();
+    antlr4::tree::TerminalNode *LOGICAL();
 
    
   };
@@ -647,21 +1141,65 @@ public:
 
   OC_ProfileContext* oC_Profile();
 
-  class  OC_StatementContext : public antlr4::ParserRuleContext {
+  class  KU_TransactionContext : public antlr4::ParserRuleContext {
   public:
-    OC_StatementContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_TransactionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    OC_QueryContext *oC_Query();
-    KU_DDLContext *kU_DDL();
-    KU_CopyNPYContext *kU_CopyNPY();
-    KU_CopyCSVContext *kU_CopyCSV();
-    KU_StandaloneCallContext *kU_StandaloneCall();
-    KU_CreateMacroContext *kU_CreateMacro();
+    antlr4::tree::TerminalNode *BEGIN();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *TRANSACTION();
+    antlr4::tree::TerminalNode *READ();
+    antlr4::tree::TerminalNode *ONLY();
+    antlr4::tree::TerminalNode *COMMIT();
+    antlr4::tree::TerminalNode *ROLLBACK();
+    antlr4::tree::TerminalNode *CHECKPOINT();
 
    
   };
 
-  OC_StatementContext* oC_Statement();
+  KU_TransactionContext* kU_Transaction();
+
+  class  KU_ExtensionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ExtensionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    KU_LoadExtensionContext *kU_LoadExtension();
+    KU_InstallExtensionContext *kU_InstallExtension();
+
+   
+  };
+
+  KU_ExtensionContext* kU_Extension();
+
+  class  KU_LoadExtensionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_LoadExtensionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *LOAD();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *EXTENSION();
+    antlr4::tree::TerminalNode *StringLiteral();
+    OC_VariableContext *oC_Variable();
+
+   
+  };
+
+  KU_LoadExtensionContext* kU_LoadExtension();
+
+  class  KU_InstallExtensionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_InstallExtensionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *INSTALL();
+    antlr4::tree::TerminalNode *SP();
+    OC_VariableContext *oC_Variable();
+
+   
+  };
+
+  KU_InstallExtensionContext* kU_InstallExtension();
 
   class  OC_QueryContext : public antlr4::ParserRuleContext {
   public:
@@ -788,11 +1326,61 @@ public:
     OC_MatchContext *oC_Match();
     OC_UnwindContext *oC_Unwind();
     KU_InQueryCallContext *kU_InQueryCall();
+    KU_LoadFromContext *kU_LoadFrom();
 
    
   };
 
   OC_ReadingClauseContext* oC_ReadingClause();
+
+  class  KU_LoadFromContext : public antlr4::ParserRuleContext {
+  public:
+    KU_LoadFromContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *LOAD();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *FROM();
+    KU_ScanSourceContext *kU_ScanSource();
+    antlr4::tree::TerminalNode *WITH();
+    antlr4::tree::TerminalNode *HEADERS();
+    KU_ColumnDefinitionsContext *kU_ColumnDefinitions();
+    KU_OptionsContext *kU_Options();
+    OC_WhereContext *oC_Where();
+
+   
+  };
+
+  KU_LoadFromContext* kU_LoadFrom();
+
+  class  OC_YieldItemContext : public antlr4::ParserRuleContext {
+  public:
+    OC_YieldItemContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_VariableContext *> oC_Variable();
+    OC_VariableContext* oC_Variable(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *AS();
+
+   
+  };
+
+  OC_YieldItemContext* oC_YieldItem();
+
+  class  OC_YieldItemsContext : public antlr4::ParserRuleContext {
+  public:
+    OC_YieldItemsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_YieldItemContext *> oC_YieldItem();
+    OC_YieldItemContext* oC_YieldItem(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  OC_YieldItemsContext* oC_YieldItems();
 
   class  KU_InQueryCallContext : public antlr4::ParserRuleContext {
   public:
@@ -801,9 +1389,10 @@ public:
     antlr4::tree::TerminalNode *CALL();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
-    OC_FunctionNameContext *oC_FunctionName();
-    std::vector<OC_LiteralContext *> oC_Literal();
-    OC_LiteralContext* oC_Literal(size_t i);
+    OC_FunctionInvocationContext *oC_FunctionInvocation();
+    OC_WhereContext *oC_Where();
+    antlr4::tree::TerminalNode *YIELD();
+    OC_YieldItemsContext *oC_YieldItems();
 
    
   };
@@ -820,12 +1409,45 @@ public:
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_WhereContext *oC_Where();
+    KU_HintContext *kU_Hint();
 
    
   };
 
   OC_MatchContext* oC_Match();
 
+  class  KU_HintContext : public antlr4::ParserRuleContext {
+  public:
+    KU_HintContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *HINT();
+    antlr4::tree::TerminalNode *SP();
+    KU_JoinNodeContext *kU_JoinNode();
+
+   
+  };
+
+  KU_HintContext* kU_Hint();
+
+  class  KU_JoinNodeContext : public antlr4::ParserRuleContext {
+  public:
+    KU_JoinNodeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<KU_JoinNodeContext *> kU_JoinNode();
+    KU_JoinNodeContext* kU_JoinNode(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    std::vector<OC_SchemaNameContext *> oC_SchemaName();
+    OC_SchemaNameContext* oC_SchemaName(size_t i);
+    antlr4::tree::TerminalNode *JOIN();
+    std::vector<antlr4::tree::TerminalNode *> MULTI_JOIN();
+    antlr4::tree::TerminalNode* MULTI_JOIN(size_t i);
+
+   
+  };
+
+  KU_JoinNodeContext* kU_JoinNode();
+  KU_JoinNodeContext* kU_JoinNode(int precedence);
   class  OC_UnwindContext : public antlr4::ParserRuleContext {
   public:
     OC_UnwindContext(antlr4::ParserRuleContext *parent, size_t invokingState);
@@ -923,6 +1545,7 @@ public:
     antlr4::tree::TerminalNode *DELETE();
     std::vector<OC_ExpressionContext *> oC_Expression();
     OC_ExpressionContext* oC_Expression(size_t i);
+    antlr4::tree::TerminalNode *DETACH();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
 
@@ -1183,7 +1806,7 @@ public:
     antlr4::tree::TerminalNode* SP(size_t i);
     OC_VariableContext *oC_Variable();
     OC_RelationshipTypesContext *oC_RelationshipTypes();
-    OC_RangeLiteralContext *oC_RangeLiteral();
+    KU_RecursiveDetailContext *kU_RecursiveDetail();
     KU_PropertiesContext *kU_Properties();
 
    
@@ -1199,6 +1822,8 @@ public:
     antlr4::tree::TerminalNode* SP(size_t i);
     std::vector<OC_PropertyKeyNameContext *> oC_PropertyKeyName();
     OC_PropertyKeyNameContext* oC_PropertyKeyName(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
     std::vector<OC_ExpressionContext *> oC_Expression();
     OC_ExpressionContext* oC_Expression(size_t i);
 
@@ -1211,6 +1836,8 @@ public:
   public:
     OC_RelationshipTypesContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> COLON();
+    antlr4::tree::TerminalNode* COLON(size_t i);
     std::vector<OC_RelTypeNameContext *> oC_RelTypeName();
     OC_RelTypeNameContext* oC_RelTypeName(size_t i);
     std::vector<antlr4::tree::TerminalNode *> SP();
@@ -1239,6 +1866,7 @@ public:
   public:
     OC_NodeLabelContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COLON();
     OC_LabelNameContext *oC_LabelName();
     antlr4::tree::TerminalNode *SP();
 
@@ -1247,24 +1875,106 @@ public:
 
   OC_NodeLabelContext* oC_NodeLabel();
 
-  class  OC_RangeLiteralContext : public antlr4::ParserRuleContext {
+  class  KU_RecursiveDetailContext : public antlr4::ParserRuleContext {
   public:
-    OC_RangeLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_RecursiveDetailContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *STAR();
-    std::vector<OC_IntegerLiteralContext *> oC_IntegerLiteral();
-    OC_IntegerLiteralContext* oC_IntegerLiteral(size_t i);
+    KU_RecursiveTypeContext *kU_RecursiveType();
+    OC_RangeLiteralContext *oC_RangeLiteral();
+    KU_RecursiveComprehensionContext *kU_RecursiveComprehension();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_RecursiveDetailContext* kU_RecursiveDetail();
+
+  class  KU_RecursiveTypeContext : public antlr4::ParserRuleContext {
+  public:
+    KU_RecursiveTypeContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *WSHORTEST();
+    OC_PropertyKeyNameContext *oC_PropertyKeyName();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
     antlr4::tree::TerminalNode *SHORTEST();
     antlr4::tree::TerminalNode *ALL();
-    OC_VariableContext *oC_Variable();
-    OC_WhereContext *oC_Where();
+    antlr4::tree::TerminalNode *TRAIL();
+    antlr4::tree::TerminalNode *ACYCLIC();
+
+   
+  };
+
+  KU_RecursiveTypeContext* kU_RecursiveType();
+
+  class  OC_RangeLiteralContext : public antlr4::ParserRuleContext {
+  public:
+    OC_RangeLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_LowerBoundContext *oC_LowerBound();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_UpperBoundContext *oC_UpperBound();
+    OC_IntegerLiteralContext *oC_IntegerLiteral();
 
    
   };
 
   OC_RangeLiteralContext* oC_RangeLiteral();
+
+  class  KU_RecursiveComprehensionContext : public antlr4::ParserRuleContext {
+  public:
+    KU_RecursiveComprehensionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_VariableContext *> oC_Variable();
+    OC_VariableContext* oC_Variable(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_WhereContext *oC_Where();
+    std::vector<KU_RecursiveProjectionItemsContext *> kU_RecursiveProjectionItems();
+    KU_RecursiveProjectionItemsContext* kU_RecursiveProjectionItems(size_t i);
+
+   
+  };
+
+  KU_RecursiveComprehensionContext* kU_RecursiveComprehension();
+
+  class  KU_RecursiveProjectionItemsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_RecursiveProjectionItemsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_ProjectionItemsContext *oC_ProjectionItems();
+
+   
+  };
+
+  KU_RecursiveProjectionItemsContext* kU_RecursiveProjectionItems();
+
+  class  OC_LowerBoundContext : public antlr4::ParserRuleContext {
+  public:
+    OC_LowerBoundContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *DecimalInteger();
+
+   
+  };
+
+  OC_LowerBoundContext* oC_LowerBound();
+
+  class  OC_UpperBoundContext : public antlr4::ParserRuleContext {
+  public:
+    OC_UpperBoundContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *DecimalInteger();
+
+   
+  };
+
+  OC_UpperBoundContext* oC_UpperBound();
 
   class  OC_LabelNameContext : public antlr4::ParserRuleContext {
   public:
@@ -1352,8 +2062,10 @@ public:
     OC_NotExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     OC_ComparisonExpressionContext *oC_ComparisonExpression();
-    antlr4::tree::TerminalNode *NOT();
-    antlr4::tree::TerminalNode *SP();
+    std::vector<antlr4::tree::TerminalNode *> NOT();
+    antlr4::tree::TerminalNode* NOT(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
 
    
   };
@@ -1515,7 +2227,8 @@ public:
     OC_UnaryAddSubtractOrFactorialExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     OC_StringListNullOperatorExpressionContext *oC_StringListNullOperatorExpression();
-    antlr4::tree::TerminalNode *MINUS();
+    std::vector<antlr4::tree::TerminalNode *> MINUS();
+    antlr4::tree::TerminalNode* MINUS(size_t i);
     antlr4::tree::TerminalNode *FACTORIAL();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
@@ -1544,36 +2257,18 @@ public:
   public:
     OC_ListOperatorExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    KU_ListExtractOperatorExpressionContext *kU_ListExtractOperatorExpression();
-    KU_ListSliceOperatorExpressionContext *kU_ListSliceOperatorExpression();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *IN();
+    OC_PropertyOrLabelsExpressionContext *oC_PropertyOrLabelsExpression();
+    std::vector<OC_ExpressionContext *> oC_Expression();
+    OC_ExpressionContext* oC_Expression(size_t i);
+    antlr4::tree::TerminalNode *COLON();
 
    
   };
 
   OC_ListOperatorExpressionContext* oC_ListOperatorExpression();
-
-  class  KU_ListExtractOperatorExpressionContext : public antlr4::ParserRuleContext {
-  public:
-    KU_ListExtractOperatorExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    OC_ExpressionContext *oC_Expression();
-
-   
-  };
-
-  KU_ListExtractOperatorExpressionContext* kU_ListExtractOperatorExpression();
-
-  class  KU_ListSliceOperatorExpressionContext : public antlr4::ParserRuleContext {
-  public:
-    KU_ListSliceOperatorExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
-    virtual size_t getRuleIndex() const override;
-    std::vector<OC_ExpressionContext *> oC_Expression();
-    OC_ExpressionContext* oC_Expression(size_t i);
-
-   
-  };
-
-  KU_ListSliceOperatorExpressionContext* kU_ListSliceOperatorExpression();
 
   class  OC_StringOperatorExpressionContext : public antlr4::ParserRuleContext {
   public:
@@ -1643,13 +2338,61 @@ public:
     OC_CaseExpressionContext *oC_CaseExpression();
     OC_ParenthesizedExpressionContext *oC_ParenthesizedExpression();
     OC_FunctionInvocationContext *oC_FunctionInvocation();
-    OC_ExistentialSubqueryContext *oC_ExistentialSubquery();
+    OC_PathPatternsContext *oC_PathPatterns();
+    OC_ExistSubqueryContext *oC_ExistSubquery();
+    KU_CountSubqueryContext *kU_CountSubquery();
     OC_VariableContext *oC_Variable();
+    OC_QuantifierContext *oC_Quantifier();
 
    
   };
 
   OC_AtomContext* oC_Atom();
+
+  class  OC_QuantifierContext : public antlr4::ParserRuleContext {
+  public:
+    OC_QuantifierContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ALL();
+    OC_FilterExpressionContext *oC_FilterExpression();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *ANY();
+    antlr4::tree::TerminalNode *NONE();
+    antlr4::tree::TerminalNode *SINGLE();
+
+   
+  };
+
+  OC_QuantifierContext* oC_Quantifier();
+
+  class  OC_FilterExpressionContext : public antlr4::ParserRuleContext {
+  public:
+    OC_FilterExpressionContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_IdInCollContext *oC_IdInColl();
+    OC_WhereContext *oC_Where();
+    antlr4::tree::TerminalNode *SP();
+
+   
+  };
+
+  OC_FilterExpressionContext* oC_FilterExpression();
+
+  class  OC_IdInCollContext : public antlr4::ParserRuleContext {
+  public:
+    OC_IdInCollContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_VariableContext *oC_Variable();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    antlr4::tree::TerminalNode *IN();
+    OC_ExpressionContext *oC_Expression();
+
+   
+  };
+
+  OC_IdInCollContext* oC_IdInColl();
 
   class  OC_LiteralContext : public antlr4::ParserRuleContext {
   public:
@@ -1685,13 +2428,26 @@ public:
     virtual size_t getRuleIndex() const override;
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
-    std::vector<OC_ExpressionContext *> oC_Expression();
-    OC_ExpressionContext* oC_Expression(size_t i);
+    OC_ExpressionContext *oC_Expression();
+    std::vector<KU_ListEntryContext *> kU_ListEntry();
+    KU_ListEntryContext* kU_ListEntry(size_t i);
 
    
   };
 
   OC_ListLiteralContext* oC_ListLiteral();
+
+  class  KU_ListEntryContext : public antlr4::ParserRuleContext {
+  public:
+    KU_ListEntryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *SP();
+    OC_ExpressionContext *oC_Expression();
+
+   
+  };
+
+  KU_ListEntryContext* kU_ListEntry();
 
   class  KU_StructLiteralContext : public antlr4::ParserRuleContext {
   public:
@@ -1711,6 +2467,7 @@ public:
   public:
     KU_StructFieldContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COLON();
     OC_ExpressionContext *oC_Expression();
     OC_SymbolicNameContext *oC_SymbolicName();
     antlr4::tree::TerminalNode *StringLiteral();
@@ -1739,13 +2496,17 @@ public:
   public:
     OC_FunctionInvocationContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    OC_FunctionNameContext *oC_FunctionName();
+    antlr4::tree::TerminalNode *COUNT();
     antlr4::tree::TerminalNode *STAR();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
-    antlr4::tree::TerminalNode *DISTINCT();
+    antlr4::tree::TerminalNode *CAST();
     std::vector<KU_FunctionParameterContext *> kU_FunctionParameter();
     KU_FunctionParameterContext* kU_FunctionParameter(size_t i);
+    antlr4::tree::TerminalNode *AS();
+    KU_DataTypeContext *kU_DataType();
+    OC_FunctionNameContext *oC_FunctionName();
+    antlr4::tree::TerminalNode *DISTINCT();
 
    
   };
@@ -1769,17 +2530,63 @@ public:
     virtual size_t getRuleIndex() const override;
     OC_ExpressionContext *oC_Expression();
     OC_SymbolicNameContext *oC_SymbolicName();
+    antlr4::tree::TerminalNode *COLON();
     std::vector<antlr4::tree::TerminalNode *> SP();
     antlr4::tree::TerminalNode* SP(size_t i);
+    KU_LambdaParameterContext *kU_LambdaParameter();
 
    
   };
 
   KU_FunctionParameterContext* kU_FunctionParameter();
 
-  class  OC_ExistentialSubqueryContext : public antlr4::ParserRuleContext {
+  class  KU_LambdaParameterContext : public antlr4::ParserRuleContext {
   public:
-    OC_ExistentialSubqueryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    KU_LambdaParameterContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    KU_LambdaVarsContext *kU_LambdaVars();
+    antlr4::tree::TerminalNode *MINUS();
+    OC_ExpressionContext *oC_Expression();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_LambdaParameterContext* kU_LambdaParameter();
+
+  class  KU_LambdaVarsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_LambdaVarsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    std::vector<OC_SymbolicNameContext *> oC_SymbolicName();
+    OC_SymbolicNameContext* oC_SymbolicName(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  KU_LambdaVarsContext* kU_LambdaVars();
+
+  class  OC_PathPatternsContext : public antlr4::ParserRuleContext {
+  public:
+    OC_PathPatternsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    OC_NodePatternContext *oC_NodePattern();
+    std::vector<OC_PatternElementChainContext *> oC_PatternElementChain();
+    OC_PatternElementChainContext* oC_PatternElementChain(size_t i);
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+
+   
+  };
+
+  OC_PathPatternsContext* oC_PathPatterns();
+
+  class  OC_ExistSubqueryContext : public antlr4::ParserRuleContext {
+  public:
+    OC_ExistSubqueryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *EXISTS();
     antlr4::tree::TerminalNode *MATCH();
@@ -1791,7 +2598,23 @@ public:
    
   };
 
-  OC_ExistentialSubqueryContext* oC_ExistentialSubquery();
+  OC_ExistSubqueryContext* oC_ExistSubquery();
+
+  class  KU_CountSubqueryContext : public antlr4::ParserRuleContext {
+  public:
+    KU_CountSubqueryContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COUNT();
+    antlr4::tree::TerminalNode *MATCH();
+    OC_PatternContext *oC_Pattern();
+    std::vector<antlr4::tree::TerminalNode *> SP();
+    antlr4::tree::TerminalNode* SP(size_t i);
+    OC_WhereContext *oC_Where();
+
+   
+  };
+
+  KU_CountSubqueryContext* kU_CountSubquery();
 
   class  OC_PropertyLookupContext : public antlr4::ParserRuleContext {
   public:
@@ -1915,6 +2738,7 @@ public:
   public:
     OC_DoubleLiteralContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *ExponentDecimalReal();
     antlr4::tree::TerminalNode *RegularDecimalReal();
 
    
@@ -1941,11 +2765,75 @@ public:
     antlr4::tree::TerminalNode *UnescapedSymbolicName();
     antlr4::tree::TerminalNode *EscapedSymbolicName();
     antlr4::tree::TerminalNode *HexLetter();
+    KU_NonReservedKeywordsContext *kU_NonReservedKeywords();
 
    
   };
 
   OC_SymbolicNameContext* oC_SymbolicName();
+
+  class  KU_NonReservedKeywordsContext : public antlr4::ParserRuleContext {
+  public:
+    KU_NonReservedKeywordsContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *COMMENT();
+    antlr4::tree::TerminalNode *ADD();
+    antlr4::tree::TerminalNode *ALTER();
+    antlr4::tree::TerminalNode *AS();
+    antlr4::tree::TerminalNode *ATTACH();
+    antlr4::tree::TerminalNode *BEGIN();
+    antlr4::tree::TerminalNode *BY();
+    antlr4::tree::TerminalNode *CALL();
+    antlr4::tree::TerminalNode *CHECKPOINT();
+    antlr4::tree::TerminalNode *COMMIT();
+    antlr4::tree::TerminalNode *CONTAINS();
+    antlr4::tree::TerminalNode *COPY();
+    antlr4::tree::TerminalNode *COUNT();
+    antlr4::tree::TerminalNode *CYCLE();
+    antlr4::tree::TerminalNode *DATABASE();
+    antlr4::tree::TerminalNode *DECIMAL();
+    antlr4::tree::TerminalNode *DELETE();
+    antlr4::tree::TerminalNode *DETACH();
+    antlr4::tree::TerminalNode *DROP();
+    antlr4::tree::TerminalNode *EXPLAIN();
+    antlr4::tree::TerminalNode *EXPORT();
+    antlr4::tree::TerminalNode *EXTENSION();
+    antlr4::tree::TerminalNode *GRAPH();
+    antlr4::tree::TerminalNode *IF();
+    antlr4::tree::TerminalNode *IS();
+    antlr4::tree::TerminalNode *IMPORT();
+    antlr4::tree::TerminalNode *INCREMENT();
+    antlr4::tree::TerminalNode *KEY();
+    antlr4::tree::TerminalNode *LOAD();
+    antlr4::tree::TerminalNode *LOGICAL();
+    antlr4::tree::TerminalNode *MATCH();
+    antlr4::tree::TerminalNode *MAXVALUE();
+    antlr4::tree::TerminalNode *MERGE();
+    antlr4::tree::TerminalNode *MINVALUE();
+    antlr4::tree::TerminalNode *NO();
+    antlr4::tree::TerminalNode *NODE();
+    antlr4::tree::TerminalNode *PROJECT();
+    antlr4::tree::TerminalNode *READ();
+    antlr4::tree::TerminalNode *REL();
+    antlr4::tree::TerminalNode *RENAME();
+    antlr4::tree::TerminalNode *RETURN();
+    antlr4::tree::TerminalNode *ROLLBACK();
+    antlr4::tree::TerminalNode *SEQUENCE();
+    antlr4::tree::TerminalNode *SET();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *L_SKIP();
+    antlr4::tree::TerminalNode *LIMIT();
+    antlr4::tree::TerminalNode *TRANSACTION();
+    antlr4::tree::TerminalNode *TYPE();
+    antlr4::tree::TerminalNode *USE();
+    antlr4::tree::TerminalNode *WRITE();
+    antlr4::tree::TerminalNode *FROM();
+    antlr4::tree::TerminalNode *TO();
+
+   
+  };
+
+  KU_NonReservedKeywordsContext* kU_NonReservedKeywords();
 
   class  OC_LeftArrowHeadContext : public antlr4::ParserRuleContext {
   public:
@@ -1979,18 +2867,17 @@ public:
   OC_DashContext* oC_Dash();
 
 
+  bool sempred(antlr4::RuleContext *_localctx, size_t ruleIndex, size_t predicateIndex) override;
+
+  bool kU_DataTypeSempred(KU_DataTypeContext *_localctx, size_t predicateIndex);
+  bool kU_JoinNodeSempred(KU_JoinNodeContext *_localctx, size_t predicateIndex);
+
+  // By default the static state used to implement the parser is lazily initialized during the first
+  // call to the constructor. You can call this function if you wish to initialize the static state
+  // ahead of time.
+  static void initialize();
+
 private:
-  static std::vector<antlr4::dfa::DFA> _decisionToDFA;
-  static antlr4::atn::PredictionContextCache _sharedContextCache;
-  static std::vector<std::string> _ruleNames;
-  static std::vector<std::string> _tokenNames;
-
-  static std::vector<std::string> _literalNames;
-  static std::vector<std::string> _symbolicNames;
-  static antlr4::dfa::Vocabulary _vocabulary;
-  static antlr4::atn::ATN _atn;
-  static std::vector<uint16_t> _serializedATN;
-
 
       virtual void notifyQueryNotConcludeWithReturn(antlr4::Token* startToken) {};
       virtual void notifyNodePatternWithoutParentheses(std::string nodeName, antlr4::Token* startToken) {};
@@ -1999,10 +2886,5 @@ private:
       virtual void notifyReturnNotAtEnd(antlr4::Token* startToken) {};
       virtual void notifyNonBinaryComparison(antlr4::Token* startToken) {};
 
-
-  struct Initializer {
-    Initializer();
-  };
-  static Initializer _init;
 };
 

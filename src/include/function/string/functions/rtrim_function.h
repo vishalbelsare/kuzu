@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cassert>
-#include <cstring>
-
 #include "base_str_function.h"
 #include "common/types/ku_string.h"
 
@@ -16,7 +13,7 @@ struct Rtrim {
     }
 
     static uint32_t rtrim(char* data, uint32_t len) {
-        auto counter = len - 1;
+        int32_t counter = len - 1;
         for (; counter >= 0; counter--) {
             if (!isspace(data[counter])) {
                 break;

@@ -8,7 +8,6 @@
 # FactorizedTable: 2 pages (store results)
 # In total: we need 23 pages for this test case
 
--GROUP OrderByTests
 -DATASET PARQUET CSV_TO_PARQUET(order-by-tests)
 
 --
@@ -19,7 +18,6 @@
 -STATEMENT MATCH (p:person) RETURN p.balance ORDER BY p.balance limit 25
 -PARALLELISM 6
 -CHECK_ORDER
--ENUMERATE
 ---- 25
 -499973
 -499962
@@ -51,7 +49,6 @@
 -STATEMENT MATCH (p:person) RETURN p.studentID ORDER BY p.studentID
 -PARALLELISM 2
 -CHECK_ORDER
--ENUMERATE
 ---- 3000
 0
 1

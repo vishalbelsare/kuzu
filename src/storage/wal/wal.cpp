@@ -1,203 +1,160 @@
 #include "storage/wal/wal.h"
 
-#include "common/utils.h"
-#include "spdlog/spdlog.h"
-#include "storage/storage_utils.h"
+#include "binder/ddl/bound_alter_info.h"
+#include "catalog/catalog_entry/sequence_catalog_entry.h"
+#include "common/file_system/file_info.h"
+#include "common/file_system/virtual_file_system.h"
+#include "common/serializer/buffered_file.h"
+#include "common/serializer/serializer.h"
+#include "common/vector/value_vector.h"
+#include "main/db_config.h"
 
+using namespace kuzu::catalog;
 using namespace kuzu::common;
+using namespace kuzu::binder;
 
 namespace kuzu {
 namespace storage {
 
-WAL::WAL(const std::string& directory, BufferManager& bufferManager)
-    : logger{LoggerUtils::getLogger(LoggerConstants::LoggerEnum::WAL)}, directory{directory},
-      bufferManager{bufferManager}, isLastLoggedRecordCommit_{false} {
-    fileHandle =
-        bufferManager.getBMFileHandle(common::FileUtils::joinPath(directory,
-                                          std::string(common::StorageConstants::WAL_FILE_SUFFIX)),
-            FileHandle::O_PERSISTENT_FILE_CREATE_NOT_EXISTS,
-            BMFileHandle::FileVersionedType::NON_VERSIONED_FILE);
-    initCurrentPage();
+WAL::WAL(const std::string& directory, bool readOnly, VirtualFileSystem* vfs,
+    main::ClientContext* context)
+    : directory{directory}, vfs{vfs} {
+    if (main::DBConfig::isDBPathInMemory(directory)) {
+        return;
+    }
+    fileInfo =
+        vfs->openFile(vfs->joinPath(directory, std::string(StorageConstants::WAL_FILE_SUFFIX)),
+            readOnly ? FileFlags::READ_ONLY :
+                       FileFlags::CREATE_IF_NOT_EXISTS | FileFlags::READ_ONLY | FileFlags::WRITE,
+            context);
+    bufferedWriter = std::make_shared<BufferedFileWriter>(*fileInfo);
+    // WAL should always be APPEND only. We don't want to overwrite the file as it may still contain
+    // records not replayed. This can happen if checkpoint is not triggered before the Database is
+    // closed last time.
+    bufferedWriter->setFileOffset(fileInfo->getFileSize());
 }
 
-page_idx_t WAL::logPageUpdateRecord(
-    StorageStructureID storageStructureID, page_idx_t pageIdxInOriginalFile) {
-    lock_t lck{mtx};
-    auto pageIdxInWAL = fileHandle->addNewPage();
-    WALRecord walRecord =
-        WALRecord::newPageUpdateRecord(storageStructureID, pageIdxInOriginalFile, pageIdxInWAL);
-    addNewWALRecordNoLock(walRecord);
-    return pageIdxInWAL;
-}
+WAL::~WAL() {}
 
-page_idx_t WAL::logPageInsertRecord(
-    StorageStructureID storageStructureID, page_idx_t pageIdxInOriginalFile) {
-    lock_t lck{mtx};
-    auto pageIdxInWAL = fileHandle->addNewPage();
-    WALRecord walRecord =
-        WALRecord::newPageInsertRecord(storageStructureID, pageIdxInOriginalFile, pageIdxInWAL);
-    addNewWALRecordNoLock(walRecord);
-    return pageIdxInWAL;
-}
-
-void WAL::logCommit(uint64_t transactionID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newCommitRecord(transactionID);
+void WAL::logBeginTransaction() {
+    std::unique_lock lck{mtx};
+    BeginTransactionRecord walRecord;
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logTableStatisticsRecord(bool isNodeTable) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newTableStatisticsRecord(isNodeTable);
+void WAL::logAndFlushCommit() {
+    std::unique_lock lck{mtx};
+    // Flush all pages before committing to make sure that commits only show up in the file when
+    // their data is also written.
+    CommitRecord walRecord;
+    addNewWALRecordNoLock(walRecord);
+    flushAllPages();
+}
+
+void WAL::logRollback() {
+    std::unique_lock lck{mtx};
+    RollbackRecord walRecord;
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logCatalogRecord() {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newCatalogRecord();
+void WAL::logAndFlushCheckpoint() {
+    std::unique_lock lck{mtx};
+    CheckpointRecord walRecord;
+    addNewWALRecordNoLock(walRecord);
+    flushAllPages();
+}
+
+void WAL::logCreateCatalogEntryRecord(CatalogEntry* catalogEntry, bool isInternal) {
+    std::unique_lock lck{mtx};
+    CreateCatalogEntryRecord walRecord(catalogEntry, isInternal);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logNodeTableRecord(table_id_t tableID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newNodeTableRecord(tableID);
+void WAL::logDropCatalogEntryRecord(table_id_t tableID, CatalogEntryType type) {
+    std::unique_lock lck{mtx};
+    DropCatalogEntryRecord walRecord(tableID, type);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logRelTableRecord(table_id_t tableID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newRelTableRecord(tableID);
+void WAL::logAlterCatalogEntryRecord(const BoundAlterInfo* alterInfo) {
+    std::unique_lock lck{mtx};
+    AlterTableEntryRecord walRecord(alterInfo);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logOverflowFileNextBytePosRecord(
-    StorageStructureID storageStructureID, uint64_t prevNextByteToWriteTo) {
-    lock_t lck{mtx};
-    WALRecord walRecord =
-        WALRecord::newOverflowFileNextBytePosRecord(storageStructureID, prevNextByteToWriteTo);
+void WAL::logTableInsertion(table_id_t tableID, TableType tableType, row_idx_t numRows,
+    const std::vector<ValueVector*>& vectors) {
+    std::unique_lock lck{mtx};
+    TableInsertionRecord walRecord(tableID, tableType, numRows, vectors);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logCopyNodeRecord(table_id_t tableID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newCopyNodeRecord(tableID);
+void WAL::logNodeDeletion(table_id_t tableID, offset_t nodeOffset, ValueVector* pkVector) {
+    std::unique_lock lck{mtx};
+    NodeDeletionRecord walRecord(tableID, nodeOffset, pkVector);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logCopyRelRecord(table_id_t tableID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newCopyRelRecord(tableID);
+void WAL::logNodeUpdate(table_id_t tableID, column_id_t columnID, offset_t nodeOffset,
+    ValueVector* propertyVector) {
+    std::unique_lock lck{mtx};
+    NodeUpdateRecord walRecord(tableID, columnID, nodeOffset, propertyVector);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logDropTableRecord(table_id_t tableID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newDropTableRecord(tableID);
+void WAL::logRelDelete(table_id_t tableID, ValueVector* srcNodeVector, ValueVector* dstNodeVector,
+    ValueVector* relIDVector) {
+    std::unique_lock lck{mtx};
+    RelDeletionRecord walRecord(tableID, srcNodeVector, dstNodeVector, relIDVector);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logDropPropertyRecord(table_id_t tableID, property_id_t propertyID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newDropPropertyRecord(tableID, propertyID);
+void WAL::logRelDetachDelete(table_id_t tableID, RelDataDirection direction,
+    ValueVector* srcNodeVector) {
+    std::unique_lock lck{mtx};
+    RelDetachDeleteRecord walRecord(tableID, direction, srcNodeVector);
     addNewWALRecordNoLock(walRecord);
 }
 
-void WAL::logAddPropertyRecord(table_id_t tableID, property_id_t propertyID) {
-    lock_t lck{mtx};
-    WALRecord walRecord = WALRecord::newAddPropertyRecord(tableID, propertyID);
+void WAL::logRelUpdate(table_id_t tableID, column_id_t columnID, ValueVector* srcNodeVector,
+    ValueVector* dstNodeVector, ValueVector* relIDVector, ValueVector* propertyVector) {
+    std::unique_lock lck{mtx};
+    RelUpdateRecord walRecord(tableID, columnID, srcNodeVector, dstNodeVector, relIDVector,
+        propertyVector);
+    addNewWALRecordNoLock(walRecord);
+}
+
+void WAL::logCopyTableRecord(table_id_t tableID) {
+    std::unique_lock lck{mtx};
+    CopyTableRecord walRecord(tableID);
+    addToUpdatedTables(tableID);
+    addNewWALRecordNoLock(walRecord);
+}
+
+void WAL::logUpdateSequenceRecord(sequence_id_t sequenceID, uint64_t kCount) {
+    std::unique_lock lck{mtx};
+    UpdateSequenceRecord walRecord(sequenceID, kCount);
     addNewWALRecordNoLock(walRecord);
 }
 
 void WAL::clearWAL() {
-    bufferManager.removeFilePagesFromFrames(*fileHandle);
-    fileHandle->resetToZeroPagesAndPageCapacity();
-    initCurrentPage();
-    StorageUtils::removeAllWALFiles(directory);
-    updatedNodeTables.clear();
-    updatedRelTables.clear();
+    bufferedWriter->getFileInfo().truncate(0);
+    bufferedWriter->resetOffsets();
+    updatedTables.clear();
 }
 
+// NOLINTNEXTLINE(readability-make-member-function-const): semantically non-const function.
 void WAL::flushAllPages() {
-    if (!isEmptyWAL()) {
-        flushHeaderPages();
-        bufferManager.flushAllDirtyPagesInFrames(*fileHandle);
-    }
+    bufferedWriter->flush();
+    bufferedWriter->getFileInfo().syncFile();
 }
 
-void WAL::initCurrentPage() {
-    currentHeaderPageIdx = 0;
-    isLastLoggedRecordCommit_ = false;
-    if (fileHandle->getNumPages() == 0) {
-        fileHandle->addNewPage();
-        resetCurrentHeaderPagePrefix();
-    } else {
-        // If the file existed, read the first page into the currentHeaderPageBuffer.
-        fileHandle->readPage(currentHeaderPageBuffer.get(), 0);
-        setIsLastRecordCommit();
-    }
-}
-
-void WAL::addNewWALRecordNoLock(WALRecord& walRecord) {
-    if (offsetInCurrentHeaderPage + sizeof(WALRecord) > WAL_HEADER_PAGE_SIZE) {
-        uint64_t nextHeaderPageIdx = fileHandle->addNewPage();
-        setNextHeaderPageOfCurrentHeaderPage(nextHeaderPageIdx);
-        // We next write the currentHeaderPageBuffer. This allows us to only keep track
-        // of only one headerPage as we append more logs but requires us to do more I/O as each
-        // header page will be read back from disk when checkpointing. But hopefully the number
-        // of header pages is very small. After this write, we can use the
-        // currentHeaderPageBuffer as an empty buffer space for the newHeaderPage we just added
-        // and which will become the current header page.
-        fileHandle->writePage(currentHeaderPageBuffer.get(), currentHeaderPageIdx);
-        resetCurrentHeaderPagePrefix();
-        currentHeaderPageIdx = nextHeaderPageIdx;
-    }
-    incrementNumRecordsInCurrentHeaderPage();
-    walRecord.writeWALRecordToBytes(currentHeaderPageBuffer.get(), offsetInCurrentHeaderPage);
-    isLastLoggedRecordCommit_ = (WALRecordType::COMMIT_RECORD == walRecord.recordType);
-}
-
-void WAL::setIsLastRecordCommit() {
-    WALIterator walIterator(fileHandle, mtx);
-    WALRecord walRecord;
-    if (!walIterator.hasNextRecord()) {
-        logger->info(
-            "Opening an existing WAL file but the file is empty. This should never happen. file: " +
-            fileHandle->getFileInfo()->path);
-        return;
-    }
-    while (walIterator.hasNextRecord()) {
-        walIterator.getNextRecord(walRecord);
-    }
-    if (WALRecordType::COMMIT_RECORD == walRecord.recordType) {
-        isLastLoggedRecordCommit_ = true;
-    }
-}
-
-WALIterator::WALIterator(std::shared_ptr<BMFileHandle> fileHandle, std::mutex& mtx)
-    : BaseWALAndWALIterator{std::move(fileHandle)}, mtx{mtx} {
-    resetCurrentHeaderPagePrefix();
-    if (this->fileHandle->getNumPages() > 0) {
-        this->fileHandle->readPage(
-            currentHeaderPageBuffer.get(), 0 /* first header page is at pageIdx 0 */);
-    }
-    numRecordsReadInCurrentHeaderPage = 0;
-}
-
-void WALIterator::getNextRecord(WALRecord& retVal) {
-    lock_t lck{mtx};
-    if (!hasNextRecordNoLock()) {
-        throw RuntimeException("WALIterator cannot read  more log records from the WAL.");
-    }
-    WALRecord::constructWALRecordFromBytes(
-        retVal, currentHeaderPageBuffer.get(), offsetInCurrentHeaderPage);
-    numRecordsReadInCurrentHeaderPage++;
-    if ((numRecordsReadInCurrentHeaderPage == getNumRecordsInCurrentHeaderPage()) &&
-        (getNextHeaderPageOfCurrentHeaderPage() != UINT32_MAX)) {
-        page_idx_t nextHeaderPageIdx = getNextHeaderPageOfCurrentHeaderPage();
-        fileHandle->readPage(currentHeaderPageBuffer.get(), nextHeaderPageIdx);
-        offsetInCurrentHeaderPage = WAL_HEADER_PAGE_PREFIX_FIELD_SIZES;
-        numRecordsReadInCurrentHeaderPage = 0;
-    }
+// NOLINTNEXTLINE(readability-make-member-function-const): semantically non-const function.
+void WAL::addNewWALRecordNoLock(const WALRecord& walRecord) {
+    KU_ASSERT(walRecord.type != WALRecordType::INVALID_RECORD);
+    KU_ASSERT(!main::DBConfig::isDBPathInMemory(directory));
+    Serializer serializer(bufferedWriter);
+    walRecord.serialize(serializer);
 }
 
 } // namespace storage

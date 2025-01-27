@@ -2,51 +2,72 @@
 
 #include <mutex>
 
-#include "storage/store/nodes_store.h"
-#include "storage/store/rels_store.h"
+#include "catalog/catalog.h"
+#include "storage/index/hash_index.h"
+#include "storage/wal/shadow_file.h"
 #include "storage/wal/wal.h"
 
-namespace spdlog {
-class logger;
+namespace kuzu {
+namespace main {
+class Database;
+} // namespace main
+
+namespace catalog {
+class CatalogEntry;
 }
 
-namespace kuzu {
 namespace storage {
+class Table;
+class DiskArrayCollection;
 
 class StorageManager {
 public:
-    StorageManager(catalog::Catalog& catalog, MemoryManager& memoryManager, WAL* wal);
+    StorageManager(const std::string& databasePath, bool readOnly, const catalog::Catalog& catalog,
+        MemoryManager& memoryManager, bool enableCompression, common::VirtualFileSystem* vfs,
+        main::ClientContext* context);
+    ~StorageManager();
 
-    ~StorageManager() = default;
+    static void recover(main::ClientContext& clientContext);
 
-    inline RelsStore& getRelsStore() const { return *relsStore; }
-    inline NodesStore& getNodesStore() const { return *nodesStore; }
-    inline catalog::Catalog* getCatalog() { return &catalog; }
-    inline void prepareCommit() {
-        nodesStore->prepareCommit();
-        relsStore->prepareCommit();
+    void createTable(catalog::CatalogEntry* entry, main::ClientContext* context);
+
+    void checkpoint(main::ClientContext& clientContext);
+    void rollbackCheckpoint(main::ClientContext& clientContext);
+
+    Table* getTable(common::table_id_t tableID) {
+        std::lock_guard lck{mtx};
+        KU_ASSERT(tables.contains(tableID));
+        return tables.at(tableID).get();
     }
-    inline void prepareRollback() {
-        nodesStore->prepareRollback();
-        relsStore->prepareRollback();
-    }
-    inline void checkpointInMemory() {
-        nodesStore->checkpointInMemory(wal->updatedNodeTables);
-        relsStore->checkpointInMemory(wal->updatedRelTables);
-    }
-    inline void rollbackInMemory() {
-        nodesStore->rollbackInMemory(wal->updatedNodeTables);
-        relsStore->rollbackInMemory(wal->updatedRelTables);
-    }
-    inline std::string getDirectory() const { return wal->getDirectory(); }
-    inline WAL* getWAL() const { return wal; }
+
+    WAL& getWAL() const;
+    ShadowFile& getShadowFile() const;
+    FileHandle* getDataFH() const { return dataFH; }
+    std::string getDatabasePath() const { return databasePath; }
+    bool isReadOnly() const { return readOnly; }
+    bool compressionEnabled() const { return enableCompression; }
 
 private:
-    std::shared_ptr<spdlog::logger> logger;
-    std::unique_ptr<RelsStore> relsStore;
-    std::unique_ptr<NodesStore> nodesStore;
-    catalog::Catalog& catalog;
-    WAL* wal;
+    FileHandle* initFileHandle(const std::string& fileName, common::VirtualFileSystem* vfs,
+        main::ClientContext* context) const;
+
+    void loadTables(const catalog::Catalog& catalog, common::VirtualFileSystem* vfs,
+        main::ClientContext* context);
+    void createNodeTable(catalog::NodeTableCatalogEntry* entry, main::ClientContext* context);
+    void createRelTable(catalog::RelTableCatalogEntry* entry);
+    void createRelTableGroup(catalog::RelGroupCatalogEntry* entry, main::ClientContext* context);
+
+private:
+    std::mutex mtx;
+    std::string databasePath;
+    bool readOnly;
+    FileHandle* dataFH;
+    FileHandle* metadataFH;
+    std::unordered_map<common::table_id_t, std::unique_ptr<Table>> tables;
+    MemoryManager& memoryManager;
+    std::unique_ptr<WAL> wal;
+    std::unique_ptr<ShadowFile> shadowFile;
+    bool enableCompression;
 };
 
 } // namespace storage

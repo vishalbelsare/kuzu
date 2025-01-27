@@ -1,31 +1,77 @@
-/*
-* OpenCypher grammar at "https://s3.amazonaws.com/artifacts.opencypher.org/legacy/Cypher.g4"
-*/
-grammar Cypher;
 
-// provide ad-hoc error messages for common syntax errors
-@parser::declarations {
-    virtual void notifyQueryNotConcludeWithReturn(antlr4::Token* startToken) {};
-    virtual void notifyNodePatternWithoutParentheses(std::string nodeName, antlr4::Token* startToken) {};
-    virtual void notifyInvalidNotEqualOperator(antlr4::Token* startToken) {};
-    virtual void notifyEmptyToken(antlr4::Token* startToken) {};
-    virtual void notifyReturnNotAtEnd(antlr4::Token* startToken) {};
-    virtual void notifyNonBinaryComparison(antlr4::Token* startToken) {};
-}
+ku_Statements
+    : oC_Cypher ( SP? ';' SP? oC_Cypher )* SP? EOF ;
 
 oC_Cypher
-    : SP ? oC_AnyCypherOption? SP? ( oC_Statement ) ( SP? ';' )? SP? EOF ;
+    : oC_AnyCypherOption? SP? ( oC_Statement ) ( SP? ';' )?;
 
-kU_CopyCSV
-    : COPY SP oC_SchemaName SP FROM SP kU_FilePaths ( SP? '(' SP? kU_ParsingOptions SP? ')' )? ;
+oC_Statement
+    : oC_Query
+        | kU_CreateNodeTable
+        | kU_CreateRelTable
+        | kU_CreateSequence
+        | kU_CreateType
+        | kU_Drop
+        | kU_AlterTable
+        | kU_CopyFrom
+        | kU_CopyFromByColumn
+        | kU_CopyTO
+        | kU_StandaloneCall
+        | kU_CreateMacro
+        | kU_CommentOn
+        | kU_Transaction
+        | kU_Extension
+        | kU_ExportDatabase
+        | kU_ImportDatabase
+        | kU_AttachDatabase
+        | kU_DetachDatabase
+        | kU_UseDatabase;
 
-kU_CopyNPY
+kU_CopyFrom
+    : COPY SP oC_SchemaName ( ( SP? kU_ColumnNames SP? ) | SP ) FROM SP kU_ScanSource ( SP? '(' SP? kU_Options SP? ')' )? ;
+
+kU_ColumnNames
+     : '(' SP? oC_SchemaName ( SP? ',' SP? oC_SchemaName )* SP? ')';
+
+kU_ScanSource
+    : kU_FilePaths
+        | '(' SP? oC_Query SP? ')'
+        | oC_Variable
+        | oC_Variable '.' SP? oC_SchemaName ;
+
+kU_CopyFromByColumn
     : COPY SP oC_SchemaName SP FROM SP '(' SP? StringLiteral ( SP? ',' SP? StringLiteral )* ')' SP BY SP COLUMN ;
 
-kU_StandaloneCall
-    : CALL SP oC_SymbolicName SP? '=' SP? oC_Literal ;
+kU_CopyTO
+    : COPY SP '(' SP? oC_Query SP? ')' SP TO SP StringLiteral ( SP? '(' SP? kU_Options SP? ')' )? ;
 
-CALL : ( 'C' | 'c' ) ( 'A' | 'a' ) ( 'L' | 'l' ) ( 'L' | 'l' ) ;
+kU_ExportDatabase
+    : EXPORT SP DATABASE SP StringLiteral ( SP? '(' SP? kU_Options SP? ')' )? ;
+
+kU_ImportDatabase
+    : IMPORT SP DATABASE SP StringLiteral;
+
+kU_AttachDatabase
+    : ATTACH SP StringLiteral (SP AS SP oC_SchemaName)? SP '(' SP? DBTYPE SP oC_SymbolicName (SP? ',' SP? kU_Options)? SP? ')' ;
+
+kU_Option
+    : oC_SymbolicName (SP? '=' SP? | SP*) oC_Literal | oC_SymbolicName;
+
+kU_Options
+    : kU_Option ( SP? ',' SP? kU_Option )* ;
+
+kU_DetachDatabase
+    : DETACH SP oC_SchemaName;
+
+kU_UseDatabase
+    : USE SP oC_SchemaName;
+
+kU_StandaloneCall
+    : CALL SP oC_SymbolicName SP? '=' SP? oC_Expression
+        | CALL SP oC_FunctionInvocation;
+
+kU_CommentOn
+    : COMMENT SP ON SP TABLE SP oC_SchemaName SP IS SP StringLiteral ;
 
 kU_CreateMacro
     : CREATE SP MACRO SP oC_FunctionName SP? '(' SP? kU_PositionalArgs? SP? kU_DefaultArg? ( SP? ',' SP? kU_DefaultArg )* SP? ')' SP AS SP oC_Expression ;
@@ -36,54 +82,63 @@ kU_PositionalArgs
 kU_DefaultArg
     : oC_SymbolicName SP? ':' '=' SP? oC_Literal ;
 
-MACRO : ( 'M' | 'm' ) ( 'A' | 'a' ) ( 'C' | 'c' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ;
-
 kU_FilePaths
     : '[' SP? StringLiteral ( SP? ',' SP? StringLiteral )* ']'
         | StringLiteral
         | GLOB SP? '(' SP? StringLiteral SP? ')' ;
 
-GLOB : ( 'G' | 'g' ) ( 'L' | 'l' ) ( 'O' | 'o' ) ( 'B' | 'b' ) ;
+kU_IfNotExists
+    : IF SP NOT SP EXISTS ;
 
-kU_ParsingOptions
-    : kU_ParsingOption ( SP? ',' SP? kU_ParsingOption )* ;
+kU_CreateNodeTable
+    : CREATE SP NODE SP TABLE SP (kU_IfNotExists SP)? oC_SchemaName SP? '(' SP? kU_PropertyDefinitions SP? ( ',' SP? kU_CreateNodeConstraint )? SP? ')' ;
 
-kU_ParsingOption
-    : oC_SymbolicName SP? '=' SP? oC_Literal;
+kU_CreateRelTable
+    : CREATE SP REL SP TABLE ( SP GROUP )? ( SP kU_IfNotExists )? SP oC_SchemaName
+        SP? '(' SP?
+            kU_FromToConnections SP?
+            ( ',' SP? kU_PropertyDefinitions SP? )?
+            ( ',' SP? oC_SymbolicName SP? )? // Constraints
+        ')'
+         ( SP WITH SP? '(' SP? kU_Options SP? ')')? ;
 
-COPY : ( 'C' | 'c' ) ( 'O' | 'o' ) ( 'P' | 'p') ( 'Y' | 'y' ) ;
+kU_FromToConnections
+    : kU_FromToConnection ( SP? ',' SP? kU_FromToConnection )* ;
 
-FROM : ( 'F' | 'f' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'M' | 'm' );
+kU_FromToConnection
+    : FROM SP oC_SchemaName SP TO SP oC_SchemaName ;
 
-NPY : ( 'N' | 'n' ) ( 'P' | 'p' ) ( 'Y' | 'y' ) ;
+kU_CreateSequence
+    : CREATE SP SEQUENCE SP (kU_IfNotExists SP)? oC_SchemaName (SP kU_SequenceOptions)* ;
 
-COLUMN : ( 'C' | 'c' ) ( 'O' | 'o' ) ( 'L' | 'l' ) ( 'U' | 'u' ) ( 'M' | 'm' ) ( 'N' | 'n' ) ;
+kU_CreateType
+    : CREATE SP TYPE SP oC_SchemaName SP AS SP kU_DataType SP? ;
 
-kU_DDL
-    : kU_CreateNode
-        | kU_CreateRel
-        | kU_DropTable
-        | kU_AlterTable;
+kU_SequenceOptions
+    : kU_IncrementBy
+        | kU_MinValue
+        | kU_MaxValue
+        | kU_StartWith
+        | kU_Cycle;
 
-kU_CreateNode
-    : CREATE SP NODE SP TABLE SP oC_SchemaName SP? '(' SP? kU_PropertyDefinitions SP? ( ',' SP? kU_CreateNodeConstraint ) SP? ')' ;
+kU_IncrementBy : INCREMENT SP ( BY SP )? MINUS? oC_IntegerLiteral ;
 
-NODE : ( 'N' | 'n' ) ( 'O' | 'o' ) ( 'D' | 'd' ) ( 'E' | 'e' ) ;
+kU_MinValue : (NO SP MINVALUE) | (MINVALUE SP MINUS? oC_IntegerLiteral) ;
 
-TABLE: ( 'T' | 't' ) ( 'A' | 'a' ) ( 'B' | 'b' ) ( 'L' | 'l' ) ( 'E' | 'e' ) ;
+kU_MaxValue : (NO SP MAXVALUE) | (MAXVALUE SP MINUS? oC_IntegerLiteral) ;
 
-kU_CreateRel
-    : CREATE SP REL SP TABLE SP oC_SchemaName SP? '(' SP? FROM SP oC_SchemaName SP TO SP oC_SchemaName SP? ( ',' SP? kU_PropertyDefinitions SP? )? ( ',' SP? oC_SymbolicName SP? )?  ')' ;
+kU_StartWith : START SP ( WITH SP )? MINUS? oC_IntegerLiteral ;
 
-kU_DropTable
-    : DROP SP TABLE SP oC_SchemaName ;
+kU_Cycle : (NO SP)? CYCLE ;
 
-DROP : ( 'D' | 'd' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'P' | 'p' ) ;
+kU_IfExists
+    : IF SP EXISTS ;
+
+kU_Drop
+    : DROP SP (TABLE | SEQUENCE) SP (kU_IfExists SP)? oC_SchemaName ;
 
 kU_AlterTable
     : ALTER SP TABLE SP oC_SchemaName SP kU_AlterOptions ;
-
-ALTER: ( 'A' | 'a' ) ( 'L' | 'l' ) ( 'T' | 't' ) ( 'E' | 'e' ) ( 'R' | 'r' ) ;
 
 kU_AlterOptions
     : kU_AddProperty
@@ -92,12 +147,13 @@ kU_AlterOptions
         | kU_RenameProperty;
 
 kU_AddProperty
-    : ADD SP oC_PropertyKeyName SP kU_DataType ( SP DEFAULT SP oC_Expression )? ;
+    : ADD SP (kU_IfNotExists SP)? oC_PropertyKeyName SP kU_DataType ( SP kU_Default )? ;
 
-DEFAULT : ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'F' | 'f' ) ( 'A' | 'a' ) ( 'U' | 'u' ) ( 'L' | 'l' ) ( 'T' | 't' ) ;
+kU_Default
+    : DEFAULT SP oC_Expression ;
 
 kU_DropProperty
-    : DROP SP oC_PropertyKeyName ;
+    : DROP SP (kU_IfExists SP)? oC_PropertyKeyName ;
 
 kU_RenameTable
     : RENAME SP TO SP oC_SchemaName ;
@@ -105,28 +161,25 @@ kU_RenameTable
 kU_RenameProperty
     : RENAME SP oC_PropertyKeyName SP TO SP oC_PropertyKeyName ;
 
-RENAME: ( 'R' | 'r' ) ( 'E' | 'e' ) ( 'N' | 'n' ) ( 'A' | 'a' ) ( 'M' | 'm' ) ( 'E' | 'e' ) ;
+kU_ColumnDefinitions: kU_ColumnDefinition ( SP? ',' SP? kU_ColumnDefinition )* ;
 
-ADD: ( 'A' | 'a' ) ( 'D' | 'd' ) ( 'D' | 'd' ) ;
+kU_ColumnDefinition : oC_PropertyKeyName SP kU_DataType ;
 
 kU_PropertyDefinitions : kU_PropertyDefinition ( SP? ',' SP? kU_PropertyDefinition )* ;
 
-kU_PropertyDefinition : oC_PropertyKeyName SP kU_DataType ;
+kU_PropertyDefinition : kU_ColumnDefinition ( SP kU_Default )? ( SP PRIMARY SP KEY)?;
 
 kU_CreateNodeConstraint : PRIMARY SP KEY SP? '(' SP? oC_PropertyKeyName SP? ')' ;
 
-PRIMARY: ( 'P' | 'p' ) ( 'R' | 'r' ) ( 'I' | 'i' ) ( 'M' | 'm' ) ( 'A' | 'a' ) ( 'R' | 'r' ) ( 'Y' | 'y' ) ;
-
-KEY : ( 'K' | 'k' ) ( 'E' | 'e' ) ( 'Y' | 'y' ) ;
-
-REL: ( 'R' | 'r' ) ( 'E' | 'e' ) ( 'L' | 'l' ) ;
-
-TO: ( 'T' | 't' ) ( 'O' | 'o' ) ;
+DECIMAL: ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'C' | 'c' ) ( 'I' | 'i' ) ( 'M' | 'm' ) ( 'A' | 'a' ) ( 'L' | 'l' ) ;
 
 kU_DataType
     : oC_SymbolicName
-        | ( oC_SymbolicName kU_ListIdentifiers )
-        | oC_SymbolicName SP? '(' SP? kU_PropertyDefinitions SP? ')' ;
+        | kU_DataType kU_ListIdentifiers
+        | UNION SP? '(' SP? kU_ColumnDefinitions SP? ')'
+        | oC_SymbolicName SP? '(' SP? kU_ColumnDefinitions SP? ')'
+        | oC_SymbolicName SP? '(' SP? kU_DataType SP? ',' SP? kU_DataType SP? ')'
+        | DECIMAL SP? '(' SP? oC_IntegerLiteral SP? ',' SP? oC_IntegerLiteral SP? ')' ;
 
 kU_ListIdentifiers : kU_ListIdentifier ( kU_ListIdentifier )* ;
 
@@ -137,22 +190,27 @@ oC_AnyCypherOption
         | oC_Profile ;
 
 oC_Explain
-    : EXPLAIN ;
-
-EXPLAIN : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'P' | 'p' ) ( 'L' | 'l' ) ( 'A' | 'a' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ;
+    : EXPLAIN (SP LOGICAL)? ;
 
 oC_Profile
     : PROFILE ;
 
-PROFILE : ( 'P' | 'p' ) ( 'R' | 'r' ) ( 'O' | 'o' ) ( 'F' | 'f' ) ( 'I' | 'i' ) ( 'L' | 'l' ) ( 'E' | 'e' ) ;
+kU_Transaction
+    : BEGIN SP TRANSACTION
+        | BEGIN SP TRANSACTION SP READ SP ONLY
+        | COMMIT
+        | ROLLBACK
+        | CHECKPOINT;
 
-oC_Statement
-    : oC_Query
-        | kU_DDL
-        | kU_CopyNPY
-        | kU_CopyCSV
-        | kU_StandaloneCall
-        | kU_CreateMacro ;
+kU_Extension
+    : kU_LoadExtension
+        | kU_InstallExtension;
+
+kU_LoadExtension
+    : LOAD SP EXTENSION SP ( StringLiteral | oC_Variable ) ;
+
+kU_InstallExtension
+    : INSTALL SP oC_Variable ;
 
 oC_Query
     : oC_RegularQuery ;
@@ -166,10 +224,6 @@ oC_Union
      :  ( UNION SP ALL SP? oC_SingleQuery )
          | ( UNION SP? oC_SingleQuery ) ;
 
-UNION : ( 'U' | 'u' ) ( 'N' | 'n' ) ( 'I' | 'i' ) ( 'O' | 'o' ) ( 'N' | 'n' ) ;
-
-ALL : ( 'A' | 'a' ) ( 'L' | 'l' ) ( 'L' | 'l' ) ;
-
 oC_SingleQuery
     : oC_SinglePartQuery
         | oC_MultiPartQuery
@@ -178,7 +232,6 @@ oC_SingleQuery
 oC_SinglePartQuery
     : ( oC_ReadingClause SP? )* oC_Return
         | ( ( oC_ReadingClause SP? )* oC_UpdatingClause ( SP? oC_UpdatingClause )* ( SP? oC_Return )? )
-        | ( oC_ReadingClause SP? )* { notifyQueryNotConcludeWithReturn($ctx->start); }
         ;
 
 oC_MultiPartQuery
@@ -198,67 +251,67 @@ oC_ReadingClause
     : oC_Match
         | oC_Unwind
         | kU_InQueryCall
+        | kU_LoadFrom
         ;
 
+kU_LoadFrom
+    :  LOAD ( SP WITH SP HEADERS SP? '(' SP? kU_ColumnDefinitions SP? ')' )? SP FROM SP kU_ScanSource (SP? '(' SP? kU_Options SP? ')')? (SP? oC_Where)? ;
+
+
+YIELD: ( 'Y' | 'y' ) ( 'I' | 'i' ) ( 'E' | 'e' ) ( 'L' | 'l' ) ( 'D' | 'd' ) ;
+
+oC_YieldItem
+         :  ( oC_Variable SP AS SP )? oC_Variable ;
+
+oC_YieldItems
+          :  oC_YieldItem ( SP? ',' SP? oC_YieldItem )* ;
+
 kU_InQueryCall
-    : CALL SP oC_FunctionName SP? '(' oC_Literal* ')' ;
+    : CALL SP oC_FunctionInvocation (SP? oC_Where)? ( SP? YIELD SP oC_YieldItems )? ;
 
 oC_Match
-    : ( OPTIONAL SP )? MATCH SP? oC_Pattern (SP? oC_Where)? ;
+    : ( OPTIONAL SP )? MATCH SP? oC_Pattern ( SP oC_Where )? ( SP kU_Hint )? ;
 
-OPTIONAL : ( 'O' | 'o' ) ( 'P' | 'p' ) ( 'T' | 't' ) ( 'I' | 'i' ) ( 'O' | 'o' ) ( 'N' | 'n' ) ( 'A' | 'a' ) ( 'L' | 'l' ) ;
+kU_Hint
+    : HINT SP kU_JoinNode;
 
-MATCH : ( 'M' | 'm' ) ( 'A' | 'a' ) ( 'T' | 't' ) ( 'C' | 'c' ) ( 'H' | 'h' ) ;
-
-UNWIND : ( 'U' | 'u' ) ( 'N' | 'n' )( 'W' | 'w' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'D' | 'd' ) ;
+kU_JoinNode
+    :  kU_JoinNode SP JOIN SP kU_JoinNode
+        | kU_JoinNode ( SP MULTI_JOIN SP oC_SchemaName)+
+        | '(' SP? kU_JoinNode SP? ')'
+        | oC_SchemaName ;
 
 oC_Unwind : UNWIND SP? oC_Expression SP AS SP oC_Variable ;
 
 oC_Create
     : CREATE SP? oC_Pattern ;
 
-CREATE : ( 'C' | 'c' ) ( 'R' | 'r' ) ( 'E' | 'e' ) ( 'A' | 'a' ) ( 'T' | 't' ) ( 'E' | 'e' ) ;
-
 // For unknown reason, openCypher use oC_PatternPart instead of oC_Pattern. There should be no difference in terms of planning.
 // So we choose to be consistent with oC_Create and use oC_Pattern instead.
 oC_Merge : MERGE SP? oC_Pattern ( SP oC_MergeAction )* ;
-
-MERGE : ( 'M' | 'm' ) ( 'E' | 'e' ) ( 'R' | 'r' ) ( 'G' | 'g' ) ( 'E' | 'e' )  ;
 
 oC_MergeAction
     :  ( ON SP MATCH SP oC_Set )
         | ( ON SP CREATE SP oC_Set )
         ;
 
-ON : ( 'O' | 'o' ) ( 'N' | 'n' ) ;
-
 oC_Set
     : SET SP? oC_SetItem ( SP? ',' SP? oC_SetItem )* ;
-
-SET : ( 'S' | 's' ) ( 'E' | 'e' ) ( 'T' | 't' )  ;
 
 oC_SetItem
     : ( oC_PropertyExpression SP? '=' SP? oC_Expression ) ;
 
 oC_Delete
-    : DELETE SP? oC_Expression ( SP? ',' SP? oC_Expression )*;
-
-DELETE : ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'L' | 'l' ) ( 'E' | 'e' ) ( 'T' | 't' ) ( 'E' | 'e' ) ;
+    : ( DETACH SP )? DELETE SP? oC_Expression ( SP? ',' SP? oC_Expression )*;
 
 oC_With
     : WITH oC_ProjectionBody ( SP? oC_Where )? ;
 
-WITH : ( 'W' | 'w' ) ( 'I' | 'i' ) ( 'T' | 't' ) ( 'H' | 'h' ) ;
-
 oC_Return
     : RETURN oC_ProjectionBody ;
 
-RETURN : ( 'R' | 'r' ) ( 'E' | 'e' ) ( 'T' | 't' ) ( 'U' | 'u' ) ( 'R' | 'r' ) ( 'N' | 'n' ) ;
-
 oC_ProjectionBody
     : ( SP? DISTINCT )? SP oC_ProjectionItems (SP oC_Order )? ( SP oC_Skip )? ( SP oC_Limit )? ;
-
-DISTINCT : ( 'D' | 'd' ) ( 'I' | 'i' ) ( 'S' | 's' ) ( 'T' | 't' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'C' | 'c' ) ( 'T' | 't' ) ;
 
 oC_ProjectionItems
     : ( STAR ( SP? ',' SP? oC_ProjectionItem )* )
@@ -272,14 +325,8 @@ oC_ProjectionItem
         | oC_Expression
         ;
 
-AS : ( 'A' | 'a' ) ( 'S' | 's' ) ;
-
 oC_Order
     : ORDER SP BY SP oC_SortItem ( ',' SP? oC_SortItem )* ;
-
-ORDER : ( 'O' | 'o' ) ( 'R' | 'r' ) ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'R' | 'r' ) ;
-
-BY : ( 'B' | 'b' ) ( 'Y' | 'y' ) ;
 
 oC_Skip
     :  L_SKIP SP oC_Expression ;
@@ -289,23 +336,11 @@ L_SKIP : ( 'S' | 's' ) ( 'K' | 'k' ) ( 'I' | 'i' ) ( 'P' | 'p' ) ;
 oC_Limit
     : LIMIT SP oC_Expression ;
 
-LIMIT : ( 'L' | 'l' ) ( 'I' | 'i' ) ( 'M' | 'm' ) ( 'I' | 'i' ) ( 'T' | 't' ) ;
-
 oC_SortItem
     : oC_Expression ( SP? ( ASCENDING | ASC | DESCENDING | DESC ) )? ;
 
-ASCENDING : ( 'A' | 'a' ) ( 'S' | 's' ) ( 'C' | 'c' ) ( 'E' | 'e' ) ( 'N' | 'n' ) ( 'D' | 'd' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'G' | 'g' ) ;
-
-ASC : ( 'A' | 'a' ) ( 'S' | 's' ) ( 'C' | 'c' ) ;
-
-DESCENDING : ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'C' | 'c' ) ( 'E' | 'e' ) ( 'N' | 'n' ) ( 'D' | 'd' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'G' | 'g' ) ;
-
-DESC : ( 'D' | 'd' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'C' | 'c' ) ;
-
 oC_Where
     : WHERE SP oC_Expression ;
-
-WHERE : ( 'W' | 'w' ) ( 'H' | 'h' ) ( 'E' | 'e' ) ( 'R' | 'r' ) ( 'E' | 'e' )  ;
 
 oC_Pattern
     : oC_PatternPart ( SP? ',' SP? oC_PatternPart )* ;
@@ -335,7 +370,7 @@ oC_RelationshipPattern
         ;
 
 oC_RelationshipDetail
-    : '[' SP? ( oC_Variable SP? )? ( oC_RelationshipTypes SP? )? ( oC_RangeLiteral SP? )? ( kU_Properties SP? )? ']' ;
+    : '[' SP? ( oC_Variable SP? )? ( oC_RelationshipTypes SP? )? ( kU_RecursiveDetail SP? )? ( kU_Properties SP? )? ']' ;
 
 // The original oC_Properties definition is  oC_MapLiteral | oC_Parameter.
 // We choose to not support parameter as properties which will be the decision for a long time.
@@ -352,10 +387,31 @@ oC_NodeLabels
 oC_NodeLabel
     : ':' SP? oC_LabelName ;
 
-oC_RangeLiteral
-    :  '*' SP? ( SHORTEST | ALL SP SHORTEST )? SP? oC_IntegerLiteral SP? '..' SP? oC_IntegerLiteral (SP? '(' SP? oC_Variable SP? ',' SP? '_' SP? '|' SP? oC_Where SP? ')')? ;
+kU_RecursiveDetail
+    : '*' ( SP? kU_RecursiveType)? ( SP? oC_RangeLiteral )? ( SP? kU_RecursiveComprehension )? ;
 
-SHORTEST : ( 'S' | 's' ) ( 'H' | 'h' ) ( 'O' | 'o' ) ( 'R' | 'r' ) ( 'T' | 't' ) ( 'E' | 'e' ) ( 'S' | 's' ) ( 'T' | 't' ) ;
+kU_RecursiveType
+    : WSHORTEST SP? '(' SP? oC_PropertyKeyName SP? ')'
+        | SHORTEST
+        | ALL SP SHORTEST
+        | TRAIL
+        | ACYCLIC ;
+
+oC_RangeLiteral
+    :  oC_LowerBound? SP? '..' SP? oC_UpperBound?
+        | oC_IntegerLiteral ;
+
+kU_RecursiveComprehension
+    : '(' SP? oC_Variable SP? ',' SP? oC_Variable ( SP? '|' SP? oC_Where SP? )? ( SP? '|' SP? kU_RecursiveProjectionItems SP? ',' SP? kU_RecursiveProjectionItems SP? )? ')' ;
+
+kU_RecursiveProjectionItems
+    : '{' SP? oC_ProjectionItems? SP? '}' ;
+
+oC_LowerBound
+    : DecimalInteger ;
+
+oC_UpperBound
+    : DecimalInteger ;
 
 oC_LabelName
     : oC_SchemaName ;
@@ -369,22 +425,14 @@ oC_Expression
 oC_OrExpression
     : oC_XorExpression ( SP OR SP oC_XorExpression )* ;
 
-OR : ( 'O' | 'o' ) ( 'R' | 'r' ) ;
-
 oC_XorExpression
     : oC_AndExpression ( SP XOR SP oC_AndExpression )* ;
-
-XOR : ( 'X' | 'x' ) ( 'O' | 'o' ) ( 'R' | 'r' ) ;
 
 oC_AndExpression
     : oC_NotExpression ( SP AND SP oC_NotExpression )* ;
 
-AND : ( 'A' | 'a' ) ( 'N' | 'n' ) ( 'D' | 'd' ) ;
-
 oC_NotExpression
-    : ( NOT SP? )?  oC_ComparisonExpression ;
-
-NOT : ( 'N' | 'n' ) ( 'O' | 'o' ) ( 'T' | 't' ) ;
+    : ( NOT SP? )*  oC_ComparisonExpression;
 
 oC_ComparisonExpression
     : kU_BitwiseOrOperatorExpression ( SP? kU_ComparisonOperator SP? kU_BitwiseOrOperatorExpression )?
@@ -421,7 +469,7 @@ oC_PowerOfExpression
     : oC_UnaryAddSubtractOrFactorialExpression ( SP? '^' SP? oC_UnaryAddSubtractOrFactorialExpression )* ;
 
 oC_UnaryAddSubtractOrFactorialExpression
-    : ( MINUS SP? )? oC_StringListNullOperatorExpression (SP? FACTORIAL)? ;
+    : ( MINUS SP? )* oC_StringListNullOperatorExpression (SP? FACTORIAL)? ;
 
 MINUS : '-' ;
 
@@ -431,13 +479,12 @@ oC_StringListNullOperatorExpression
     : oC_PropertyOrLabelsExpression ( oC_StringOperatorExpression | oC_ListOperatorExpression+ | oC_NullOperatorExpression )? ;
 
 oC_ListOperatorExpression
-    : kU_ListExtractOperatorExpression | kU_ListSliceOperatorExpression  ;
+    : ( SP IN SP? oC_PropertyOrLabelsExpression )
+        | ( '[' oC_Expression ']' )
+        | ( '[' oC_Expression? COLON oC_Expression? ']' )
+        ;
 
-kU_ListExtractOperatorExpression
-    : '[' oC_Expression ']' ;
-
-kU_ListSliceOperatorExpression
-    : '[' oC_Expression? ':' oC_Expression? ']' ;
+COLON : ':' ;
 
 oC_StringOperatorExpression
     :  ( oC_RegularExpression | ( SP STARTS SP WITH ) | ( SP ENDS SP WITH ) | ( SP CONTAINS ) ) SP? oC_PropertyOrLabelsExpression ;
@@ -445,19 +492,9 @@ oC_StringOperatorExpression
 oC_RegularExpression
     :  SP? '=~' ;
 
-STARTS : ( 'S' | 's' ) ( 'T' | 't' ) ( 'A' | 'a' ) ( 'R' | 'r' ) ( 'T' | 't' ) ( 'S' | 's' ) ;
-
-ENDS : ( 'E' | 'e' ) ( 'N' | 'n' ) ( 'D' | 'd' ) ( 'S' | 's' ) ;
-
-CONTAINS : ( 'C' | 'c' ) ( 'O' | 'o' ) ( 'N' | 'n' ) ( 'T' | 't' ) ( 'A' | 'a' ) ( 'I' | 'i' ) ( 'N' | 'n' ) ( 'S' | 's' ) ;
-
 oC_NullOperatorExpression
-    : ( SP IS SP NULL_ )
-        | ( SP IS SP NOT SP NULL_ ) ;
-
-IS : ( 'I' | 'i' ) ( 'S' | 's' ) ;
-
-NULL_ : ( 'N' | 'n' ) ( 'U' | 'u' ) ( 'L' | 'l' ) ( 'L' | 'l' ) ;
+    : ( SP IS SP NULL )
+        | ( SP IS SP NOT SP NULL ) ;
 
 oC_PropertyOrLabelsExpression
     : oC_Atom ( SP? oC_PropertyLookup )* ;
@@ -468,15 +505,31 @@ oC_Atom
         | oC_CaseExpression
         | oC_ParenthesizedExpression
         | oC_FunctionInvocation
-        | oC_ExistentialSubquery
+        | oC_PathPatterns
+        | oC_ExistSubquery
+        | kU_CountSubquery
         | oC_Variable
+        | oC_Quantifier
         ;
+
+oC_Quantifier
+    :  ( ALL SP? '(' SP? oC_FilterExpression SP? ')' )
+        | ( ANY SP? '(' SP? oC_FilterExpression SP? ')' )
+        | ( NONE SP? '(' SP? oC_FilterExpression SP? ')' )
+        | ( SINGLE SP? '(' SP? oC_FilterExpression SP? ')' )
+        ;
+
+oC_FilterExpression
+    :  oC_IdInColl ( SP? oC_Where )? ;
+
+oC_IdInColl
+    :  oC_Variable SP IN SP oC_Expression ;
 
 oC_Literal
     : oC_NumberLiteral
         | StringLiteral
         | oC_BooleanLiteral
-        | NULL_
+        | NULL
         | oC_ListLiteral
         | kU_StructLiteral
         ;
@@ -486,12 +539,11 @@ oC_BooleanLiteral
         | FALSE
         ;
 
-TRUE : ( 'T' | 't' ) ( 'R' | 'r' ) ( 'U' | 'u' ) ( 'E' | 'e' ) ;
-
-FALSE : ( 'F' | 'f' ) ( 'A' | 'a' ) ( 'L' | 'l' ) ( 'S' | 's' ) ( 'E' | 'e' ) ;
-
 oC_ListLiteral
-    :  '[' SP? ( oC_Expression SP? ( ',' SP? oC_Expression SP? )* )? ']' ;
+    :  '[' SP? ( oC_Expression SP? ( kU_ListEntry SP? )* )? ']' ;
+
+kU_ListEntry
+    : ',' SP? oC_Expression? ;
 
 kU_StructLiteral
     :  '{' SP? kU_StructField SP? ( ',' SP? kU_StructField SP? )* '}' ;
@@ -503,19 +555,32 @@ oC_ParenthesizedExpression
     : '(' SP? oC_Expression SP? ')' ;
 
 oC_FunctionInvocation
-    : oC_FunctionName SP? '(' SP? '*' SP? ')'
+    : COUNT SP? '(' SP? '*' SP? ')'
+        | CAST SP? '(' SP? kU_FunctionParameter SP? ( ( AS SP? kU_DataType ) | ( ',' SP? kU_FunctionParameter ) ) SP? ')'
         | oC_FunctionName SP? '(' SP? ( DISTINCT SP? )? ( kU_FunctionParameter SP? ( ',' SP? kU_FunctionParameter SP? )* )? ')' ;
 
 oC_FunctionName
     : oC_SymbolicName ;
 
 kU_FunctionParameter
-    : ( oC_SymbolicName SP? ':' '=' SP? )? oC_Expression ;
+    : ( oC_SymbolicName SP? ':' '=' SP? )? oC_Expression
+        | kU_LambdaParameter ;
 
-oC_ExistentialSubquery
-    :  EXISTS SP? '{' SP? MATCH SP? oC_Pattern ( SP? oC_Where )? SP? '}' ;
+kU_LambdaParameter
+    : kU_LambdaVars SP? '-' '>' SP? oC_Expression SP? ;
 
-EXISTS : ( 'E' | 'e' ) ( 'X' | 'x' ) ( 'I' | 'i' ) ( 'S' | 's' ) ( 'T' | 't' ) ( 'S' | 's' ) ;
+kU_LambdaVars
+    : oC_SymbolicName
+    | '(' SP? oC_SymbolicName SP? ( ',' SP? oC_SymbolicName SP?)* ')' ;
+
+oC_PathPatterns
+    : oC_NodePattern ( SP? oC_PatternElementChain )+;
+
+oC_ExistSubquery
+    : EXISTS SP? '{' SP? MATCH SP? oC_Pattern ( SP? oC_Where )? SP? '}' ;
+
+kU_CountSubquery
+    : COUNT SP? '{' SP? MATCH SP? oC_Pattern ( SP? oC_Where )? SP? '}' ;
 
 oC_PropertyLookup
     : '.' SP? ( oC_PropertyKeyName | STAR ) ;
@@ -523,18 +588,8 @@ oC_PropertyLookup
 oC_CaseExpression
     :  ( ( CASE ( SP? oC_CaseAlternative )+ ) | ( CASE SP? oC_Expression ( SP? oC_CaseAlternative )+ ) ) ( SP? ELSE SP? oC_Expression )? SP? END ;
 
-CASE : ( 'C' | 'c' ) ( 'A' | 'a' ) ( 'S' | 's' ) ( 'E' | 'e' )  ;
-
-ELSE : ( 'E' | 'e' ) ( 'L' | 'l' ) ( 'S' | 's' ) ( 'E' | 'e' )  ;
-
-END : ( 'E' | 'e' ) ( 'N' | 'n' ) ( 'D' | 'd' )  ;
-
 oC_CaseAlternative
     :  WHEN SP? oC_Expression SP? THEN SP? oC_Expression ;
-
-WHEN : ( 'W' | 'w' ) ( 'H' | 'h' ) ( 'E' | 'e' ) ( 'N' | 'n' )  ;
-
-THEN : ( 'T' | 't' ) ( 'H' | 'h' ) ( 'E' | 'e' ) ( 'N' | 'n' )  ;
 
 oC_Variable
     : oC_SymbolicName ;
@@ -608,7 +663,12 @@ ZeroDigit
     : '0' ;
 
 oC_DoubleLiteral
-    : RegularDecimalReal ;
+    : ExponentDecimalReal
+        | RegularDecimalReal
+        ;
+
+ExponentDecimalReal
+    : ( ( Digit )+ | ( ( Digit )+ '.' ( Digit )+ ) | ( '.' ( Digit )+ ) ) ( 'E' | 'e' ) '-'? ( Digit )+ ;
 
 RegularDecimalReal
     : ( Digit )* '.' ( Digit )+ ;
@@ -620,6 +680,65 @@ oC_SymbolicName
     : UnescapedSymbolicName
         | EscapedSymbolicName {if ($EscapedSymbolicName.text == "``") { notifyEmptyToken($EscapedSymbolicName); }}
         | HexLetter
+        | kU_NonReservedKeywords
+        ;
+
+// example of BEGIN and END: TCKWith2.Scenario1
+kU_NonReservedKeywords
+    : COMMENT
+        | ADD
+        | ALTER
+        | AS
+        | ATTACH
+        | BEGIN
+        | BY
+        | CALL
+        | CHECKPOINT
+        | COMMENT
+        | COMMIT
+        | CONTAINS
+        | COPY
+        | COUNT
+        | CYCLE
+        | DATABASE
+        | DECIMAL
+        | DELETE
+        | DETACH
+        | DROP
+        | EXPLAIN
+        | EXPORT
+        | EXTENSION
+        | GRAPH
+        | IF
+        | IS
+        | IMPORT
+        | INCREMENT
+        | KEY
+        | LOAD
+        | LOGICAL
+        | MATCH
+        | MAXVALUE
+        | MERGE
+        | MINVALUE
+        | NO
+        | NODE
+        | PROJECT
+        | READ
+        | REL
+        | RENAME
+        | RETURN
+        | ROLLBACK
+        | SEQUENCE
+        | SET
+        | START
+        | L_SKIP
+        | LIMIT
+        | TRANSACTION
+        | TYPE
+        | USE
+        | WRITE
+        | FROM
+        | TO
         ;
 
 UnescapedSymbolicName
@@ -671,12 +790,12 @@ WHITESPACE
         | '\u00a0'
         | '\u2007'
         | '\u202f'
-        | Comment
+        | CypherComment
         ;
 
-Comment
+CypherComment
     : ( '/*' ( Comment_1 | ( '*' Comment_2 ) )* '*/' )
-        | ( '--' ( Comment_3 )* CR? ( LF | EOF ) )
+        | ( '//' ( Comment_3 )* CR? ( LF | EOF ) )
         ;
 
 oC_LeftArrowHead

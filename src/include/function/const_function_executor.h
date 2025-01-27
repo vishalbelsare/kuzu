@@ -1,7 +1,5 @@
 #pragma once
 
-#include <functional>
-
 #include "common/vector/value_vector.h"
 
 namespace kuzu {
@@ -11,10 +9,10 @@ struct ConstFunctionExecutor {
 
     template<typename RESULT_TYPE, typename OP>
     static void execute(common::ValueVector& result) {
-        assert(result.state->isFlat());
+        KU_ASSERT(result.state->isFlat());
         auto resultValues = (RESULT_TYPE*)result.getData();
-        auto idx = result.state->selVector->selectedPositions[0];
-        assert(idx == 0);
+        auto idx = result.state->getSelVector()[0];
+        KU_ASSERT(idx == 0);
         OP::operation(resultValues[idx]);
     }
 };

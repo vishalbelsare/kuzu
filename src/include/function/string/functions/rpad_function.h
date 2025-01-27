@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cassert>
-#include <cstring>
-
 #include "base_pad_function.h"
 #include "common/types/ku_string.h"
 
@@ -14,8 +11,8 @@ public:
     static inline void operation(common::ku_string_t& src, int64_t count,
         common::ku_string_t& characterToPad, common::ku_string_t& result,
         common::ValueVector& resultValueVector) {
-        BasePadOperation::operation(
-            src, count, characterToPad, result, resultValueVector, rpadOperation);
+        BasePadOperation::operation(src, count, characterToPad, result, resultValueVector,
+            rpadOperation);
     }
 
     static void rpadOperation(common::ku_string_t& src, int64_t count,

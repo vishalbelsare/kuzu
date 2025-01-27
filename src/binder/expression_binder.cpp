@@ -1,137 +1,157 @@
 #include "binder/expression_binder.h"
 
 #include "binder/binder.h"
-#include "binder/expression/expression_visitor.h"
-#include "binder/expression/function_expression.h"
-#include "binder/expression/literal_expression.h"
+#include "binder/expression/expression_util.h"
 #include "binder/expression/parameter_expression.h"
+#include "binder/expression_visitor.h"
+#include "common/exception/binder.h"
+#include "common/exception/not_implemented.h"
+#include "common/string_format.h"
+#include "expression_evaluator/expression_evaluator_utils.h"
 #include "function/cast/vector_cast_functions.h"
+#include "main/client_context.h"
+#include "parser/expression/parsed_expression_visitor.h"
+#include "parser/expression/parsed_parameter_expression.h"
 
 using namespace kuzu::common;
 using namespace kuzu::function;
+using namespace kuzu::parser;
 
 namespace kuzu {
 namespace binder {
 
 std::shared_ptr<Expression> ExpressionBinder::bindExpression(
     const parser::ParsedExpression& parsedExpression) {
+    // Normally u can only reference an existing expression through alias which is a parsed
+    // VARIABLE expression.
+    // An exception is order by binding, e.g. RETURN a, COUNT(*) ORDER BY COUNT(*)
+    // the later COUNT(*) should reference the one in projection list. So we need to explicitly
+    // check scope when binding order by list.
+    if (bindOrderByAfterAggregation && binder->scope.contains(parsedExpression.toString())) {
+        return binder->scope.getExpression(parsedExpression.toString());
+    }
+    auto collector = ParsedParamExprCollector();
+    collector.visit(&parsedExpression);
+    if (collector.hasParamExprs()) {
+        bool allParamExist = true;
+        for (auto& parsedExpr : collector.getParamExprs()) {
+            auto name = parsedExpr->constCast<ParsedParameterExpression>().getParameterName();
+            if (!parameterMap.contains(name)) {
+                auto value = std::make_shared<Value>(Value::createNullValue());
+                parameterMap.insert({name, value});
+                allParamExist = false;
+            }
+        }
+        if (!allParamExist) {
+            auto expr = std::make_shared<ParameterExpression>(binder->getUniqueExpressionName(""),
+                Value::createNullValue());
+            if (parsedExpression.hasAlias()) {
+                expr->setAlias(parsedExpression.getAlias());
+            }
+            return expr;
+        }
+    }
     std::shared_ptr<Expression> expression;
     auto expressionType = parsedExpression.getExpressionType();
-    if (isExpressionBoolConnection(expressionType)) {
+    if (ExpressionTypeUtil::isBoolean(expressionType)) {
         expression = bindBooleanExpression(parsedExpression);
-    } else if (isExpressionComparison(expressionType)) {
+    } else if (ExpressionTypeUtil::isComparison(expressionType)) {
         expression = bindComparisonExpression(parsedExpression);
-    } else if (isExpressionNullOperator(expressionType)) {
+    } else if (ExpressionTypeUtil::isNullOperator(expressionType)) {
         expression = bindNullOperatorExpression(parsedExpression);
-    } else if (FUNCTION == expressionType) {
+    } else if (ExpressionType::FUNCTION == expressionType) {
         expression = bindFunctionExpression(parsedExpression);
-    } else if (PROPERTY == expressionType) {
+    } else if (ExpressionType::PROPERTY == expressionType) {
         expression = bindPropertyExpression(parsedExpression);
-    } else if (PARAMETER == expressionType) {
+    } else if (ExpressionType::PARAMETER == expressionType) {
         expression = bindParameterExpression(parsedExpression);
-    } else if (isExpressionLiteral(expressionType)) {
+    } else if (ExpressionType::LITERAL == expressionType) {
         expression = bindLiteralExpression(parsedExpression);
-    } else if (VARIABLE == expressionType) {
+    } else if (ExpressionType::VARIABLE == expressionType) {
         expression = bindVariableExpression(parsedExpression);
-    } else if (EXISTENTIAL_SUBQUERY == expressionType) {
-        expression = bindExistentialSubqueryExpression(parsedExpression);
-    } else if (CASE_ELSE == expressionType) {
+    } else if (ExpressionType::SUBQUERY == expressionType) {
+        expression = bindSubqueryExpression(parsedExpression);
+    } else if (ExpressionType::CASE_ELSE == expressionType) {
         expression = bindCaseExpression(parsedExpression);
+    } else if (ExpressionType::LAMBDA == expressionType) {
+        expression = bindLambdaExpression(parsedExpression);
     } else {
         throw NotImplementedException(
-            "bindExpression(" + expressionTypeToString(expressionType) + ").");
+            "bindExpression(" + ExpressionTypeUtil::toString(expressionType) + ").");
     }
-    if (parsedExpression.hasAlias()) {
-        expression->setAlias(parsedExpression.getAlias());
-    }
-    if (isExpressionAggregate(expression->expressionType)) {
-        validateAggregationExpressionIsNotNested(*expression);
+    if (ConstantExpressionVisitor::needFold(*expression)) {
+        return foldExpression(expression);
     }
     return expression;
 }
 
+std::shared_ptr<Expression> ExpressionBinder::foldExpression(
+    const std::shared_ptr<Expression>& expression) const {
+    auto value =
+        evaluator::ExpressionEvaluatorUtils::evaluateConstantExpression(expression, context);
+    auto result = createLiteralExpression(value);
+    // Fold result should preserve the alias original expression. E.g.
+    // RETURN 2, 1 + 1 AS x
+    // Once folded, 1 + 1 will become 2 and have the same identifier as the first RETURN element.
+    // We preserve alias (x) to avoid such conflict.
+    if (expression->hasAlias()) {
+        result->setAlias(expression->getAlias());
+    } else {
+        result->setAlias(expression->toString());
+    }
+    return result;
+}
+
+static std::string unsupportedImplicitCastException(const Expression& expression,
+    const std::string& targetTypeStr) {
+    return stringFormat(
+        "Expression {} has data type {} but expected {}. Implicit cast is not supported.",
+        expression.toString(), expression.dataType.toString(), targetTypeStr);
+}
+
+static bool checkUDTCast(const LogicalType& type, const LogicalType& target) {
+    if (type.isInternalType() && target.isInternalType()) {
+        return false;
+    }
+    return type.getLogicalTypeID() == target.getLogicalTypeID();
+}
+
 std::shared_ptr<Expression> ExpressionBinder::implicitCastIfNecessary(
     const std::shared_ptr<Expression>& expression, const LogicalType& targetType) {
-    if (targetType.getLogicalTypeID() == LogicalTypeID::ANY || expression->dataType == targetType) {
+    auto& type = expression->dataType;
+    if (checkUDTCast(type, targetType)) {
         return expression;
     }
-    if (expression->dataType.getLogicalTypeID() == LogicalTypeID::ANY) {
-        resolveAnyDataType(*expression, targetType);
+    if (type == targetType || targetType.containsAny()) { // No need to cast.
+        return expression;
+    }
+    if (ExpressionUtil::canCastStatically(*expression, targetType)) {
+        expression->cast(targetType);
         return expression;
     }
     return implicitCast(expression, targetType);
 }
 
-std::shared_ptr<Expression> ExpressionBinder::implicitCastIfNecessary(
-    const std::shared_ptr<Expression>& expression, LogicalTypeID targetTypeID) {
-    if (targetTypeID == LogicalTypeID::ANY ||
-        expression->dataType.getLogicalTypeID() == targetTypeID) {
-        return expression;
-    }
-    if (expression->dataType.getLogicalTypeID() == LogicalTypeID::ANY) {
-        if (targetTypeID == LogicalTypeID::VAR_LIST) {
-            // e.g. len($1) we cannot infer the child type for $1.
-            throw BinderException("Cannot resolve recursive data type for expression " +
-                                  expression->toString() + ".");
-        }
-        resolveAnyDataType(*expression, LogicalType(targetTypeID));
-        return expression;
-    }
-    assert(targetTypeID != LogicalTypeID::VAR_LIST);
-    return implicitCast(expression, LogicalType(targetTypeID));
-}
-
 std::shared_ptr<Expression> ExpressionBinder::implicitCast(
-    const std::shared_ptr<Expression>& expression, const common::LogicalType& targetType) {
-    if (VectorCastFunction::hasImplicitCast(expression->dataType, targetType)) {
-        auto functionName = VectorCastFunction::bindImplicitCastFuncName(targetType);
-        auto children = expression_vector{expression};
-        auto bindData = std::make_unique<FunctionBindData>(targetType);
-        function::scalar_exec_func execFunc;
-        VectorCastFunction::bindImplicitCastFunc(
-            expression->dataType.getLogicalTypeID(), targetType.getLogicalTypeID(), execFunc);
-        auto uniqueName = ScalarFunctionExpression::getUniqueName(functionName, children);
-        return std::make_shared<ScalarFunctionExpression>(functionName, FUNCTION,
-            std::move(bindData), std::move(children), execFunc, nullptr /* selectFunc */,
-            std::move(uniqueName));
+    const std::shared_ptr<Expression>& expression, const LogicalType& targetType) {
+    if (CastFunction::hasImplicitCast(expression->dataType, targetType)) {
+        return forceCast(expression, targetType);
     } else {
-        throw common::BinderException(
-            "Expression " + expression->toString() + " has data type " +
-            common::LogicalTypeUtils::dataTypeToString(expression->dataType) + " but expect " +
-            common::LogicalTypeUtils::dataTypeToString(targetType) +
-            ". Implicit cast is not supported.");
+        throw BinderException(unsupportedImplicitCastException(*expression, targetType.toString()));
     }
 }
 
-void ExpressionBinder::resolveAnyDataType(Expression& expression, const LogicalType& targetType) {
-    if (expression.expressionType == PARAMETER) { // expression is parameter
-        ((ParameterExpression&)expression).setDataType(targetType);
-    } else { // expression is null literal
-        assert(expression.expressionType == LITERAL);
-        ((LiteralExpression&)expression).setDataType(targetType);
-    }
+// cast without implicit checking.
+std::shared_ptr<Expression> ExpressionBinder::forceCast(
+    const std::shared_ptr<Expression>& expression, const LogicalType& targetType) {
+    auto functionName = "CAST";
+    auto children =
+        expression_vector{expression, createLiteralExpression(Value(targetType.toString()))};
+    return bindScalarFunctionExpression(children, functionName);
 }
 
-void ExpressionBinder::validateExpectedDataType(
-    const Expression& expression, const std::vector<LogicalTypeID>& targets) {
-    auto dataType = expression.dataType;
-    auto targetsSet = std::unordered_set<LogicalTypeID>{targets.begin(), targets.end()};
-    if (!targetsSet.contains(dataType.getLogicalTypeID())) {
-        throw BinderException(expression.toString() + " has data type " +
-                              LogicalTypeUtils::dataTypeToString(dataType.getLogicalTypeID()) +
-                              ". " + LogicalTypeUtils::dataTypesToString(targets) +
-                              " was expected.");
-    }
-}
-
-void ExpressionBinder::validateAggregationExpressionIsNotNested(const Expression& expression) {
-    if (expression.getNumChildren() == 0) {
-        return;
-    }
-    if (ExpressionVisitor::hasAggregateExpression(*expression.getChild(0))) {
-        throw BinderException(
-            "Expression " + expression.toString() + " contains nested aggregation.");
-    }
+std::string ExpressionBinder::getUniqueName(const std::string& name) const {
+    return binder->getUniqueExpressionName(name);
 }
 
 } // namespace binder

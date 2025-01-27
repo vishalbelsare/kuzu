@@ -1,49 +1,49 @@
 #pragma once
 
-#include "binder/expression/expression.h"
+#include "binder/query/query_graph.h"
 #include "bound_reading_clause.h"
-#include "query_graph.h"
 
 namespace kuzu {
 namespace binder {
 
-class BoundMatchClause : public BoundReadingClause {
+struct BoundJoinHintNode {
+    std::shared_ptr<Expression> nodeOrRel;
+    std::vector<std::shared_ptr<BoundJoinHintNode>> children;
+
+    BoundJoinHintNode() = default;
+    explicit BoundJoinHintNode(std::shared_ptr<Expression> nodeOrRel)
+        : nodeOrRel{std::move(nodeOrRel)} {}
+
+    void addChild(std::shared_ptr<BoundJoinHintNode> child) {
+        children.push_back(std::move(child));
+    }
+
+    bool isLeaf() const { return children.empty(); }
+    bool isBinary() const { return children.size() == 2; }
+    bool isMultiWay() const { return children.size() > 2; }
+};
+
+class BoundMatchClause final : public BoundReadingClause {
+    static constexpr common::ClauseType clauseType_ = common::ClauseType::MATCH;
+
 public:
-    explicit BoundMatchClause(std::unique_ptr<QueryGraphCollection> queryGraphCollection,
-        common::MatchClauseType matchClauseType)
-        : BoundReadingClause{common::ClauseType::MATCH},
-          queryGraphCollection{std::move(queryGraphCollection)}, matchClauseType{matchClauseType} {}
+    BoundMatchClause(QueryGraphCollection collection, common::MatchClauseType matchClauseType)
+        : BoundReadingClause{clauseType_}, collection{std::move(collection)},
+          matchClauseType{matchClauseType} {}
 
-    BoundMatchClause(const BoundMatchClause& other)
-        : BoundReadingClause(common::ClauseType::MATCH),
-          queryGraphCollection{other.queryGraphCollection->copy()},
-          whereExpression(other.whereExpression), matchClauseType{other.matchClauseType} {}
+    QueryGraphCollection* getQueryGraphCollectionUnsafe() { return &collection; }
+    const QueryGraphCollection* getQueryGraphCollection() const { return &collection; }
 
-    ~BoundMatchClause() override = default;
+    common::MatchClauseType getMatchClauseType() const { return matchClauseType; }
 
-    inline QueryGraphCollection* getQueryGraphCollection() const {
-        return queryGraphCollection.get();
-    }
-
-    inline void setWhereExpression(std::shared_ptr<Expression> expression) {
-        whereExpression = std::move(expression);
-    }
-    inline bool hasWhereExpression() const { return whereExpression != nullptr; }
-    inline std::shared_ptr<Expression> getWhereExpression() const { return whereExpression; }
-    inline expression_vector getPredicatesSplitOnAnd() const {
-        return hasWhereExpression() ? whereExpression->splitOnAND() : expression_vector{};
-    }
-
-    inline common::MatchClauseType getMatchClauseType() const { return matchClauseType; }
-
-    inline std::unique_ptr<BoundReadingClause> copy() override {
-        return std::make_unique<BoundMatchClause>(*this);
-    }
+    void setHint(std::shared_ptr<BoundJoinHintNode> root) { hintRoot = std::move(root); }
+    bool hasHint() const { return hintRoot != nullptr; }
+    std::shared_ptr<BoundJoinHintNode> getHint() const { return hintRoot; }
 
 private:
-    std::unique_ptr<QueryGraphCollection> queryGraphCollection;
-    std::shared_ptr<Expression> whereExpression;
+    QueryGraphCollection collection;
     common::MatchClauseType matchClauseType;
+    std::shared_ptr<BoundJoinHintNode> hintRoot;
 };
 
 } // namespace binder

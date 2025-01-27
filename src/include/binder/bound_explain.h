@@ -1,15 +1,15 @@
 #pragma once
 
 #include "binder/bound_statement.h"
-#include "common/explain_type.h"
+#include "common/enums/explain_type.h"
 
 namespace kuzu {
 namespace binder {
 
-class BoundExplain : public BoundStatement {
+class BoundExplain final : public BoundStatement {
 public:
-    explicit BoundExplain(
-        std::unique_ptr<BoundStatement> statementToExplain, common::ExplainType explainType)
+    explicit BoundExplain(std::unique_ptr<BoundStatement> statementToExplain,
+        common::ExplainType explainType)
         : BoundStatement{common::StatementType::EXPLAIN,
               BoundStatementResult::createSingleStringColumnResult(
                   "explain result" /* columnName */)},

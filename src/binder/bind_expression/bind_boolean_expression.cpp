@@ -1,9 +1,10 @@
-#include "binder/expression/function_expression.h"
+#include "binder/expression/scalar_function_expression.h"
 #include "binder/expression_binder.h"
 #include "function/boolean/vector_boolean_functions.h"
 
 using namespace kuzu::common;
 using namespace kuzu::parser;
+using namespace kuzu::function;
 
 namespace kuzu {
 namespace binder {
@@ -17,34 +18,38 @@ std::shared_ptr<Expression> ExpressionBinder::bindBooleanExpression(
     return bindBooleanExpression(parsedExpression.getExpressionType(), children);
 }
 
-std::shared_ptr<Expression> ExpressionBinder::bindBooleanExpression(
-    ExpressionType expressionType, const expression_vector& children) {
+std::shared_ptr<Expression> ExpressionBinder::bindBooleanExpression(ExpressionType expressionType,
+    const expression_vector& children) {
     expression_vector childrenAfterCast;
+    std::vector<LogicalTypeID> inputTypeIDs;
     for (auto& child : children) {
-        childrenAfterCast.push_back(implicitCastIfNecessary(child, LogicalTypeID::BOOL));
+        childrenAfterCast.push_back(implicitCastIfNecessary(child, LogicalType::BOOL()));
+        inputTypeIDs.push_back(LogicalTypeID::BOOL);
     }
-    auto functionName = expressionTypeToString(expressionType);
-    function::scalar_exec_func execFunc;
-    function::VectorBooleanFunction::bindExecFunction(expressionType, childrenAfterCast, execFunc);
-    function::scalar_select_func selectFunc;
-    function::VectorBooleanFunction::bindSelectFunction(
-        expressionType, childrenAfterCast, selectFunc);
-    auto bindData = std::make_unique<function::FunctionBindData>(LogicalType(LogicalTypeID::BOOL));
+    auto functionName = ExpressionTypeUtil::toString(expressionType);
+    scalar_func_exec_t execFunc;
+    VectorBooleanFunction::bindExecFunction(expressionType, childrenAfterCast, execFunc);
+    scalar_func_select_t selectFunc;
+    VectorBooleanFunction::bindSelectFunction(expressionType, childrenAfterCast, selectFunc);
+    auto bindData = std::make_unique<FunctionBindData>(LogicalType::BOOL());
     auto uniqueExpressionName =
         ScalarFunctionExpression::getUniqueName(functionName, childrenAfterCast);
-    return make_shared<ScalarFunctionExpression>(functionName, expressionType, std::move(bindData),
-        std::move(childrenAfterCast), std::move(execFunc), std::move(selectFunc),
-        uniqueExpressionName);
+    auto func = std::make_unique<ScalarFunction>(functionName, inputTypeIDs, LogicalTypeID::BOOL,
+        execFunc, selectFunc);
+    return std::make_shared<ScalarFunctionExpression>(expressionType, std::move(func),
+        std::move(bindData), std::move(childrenAfterCast), uniqueExpressionName);
 }
 
-std::shared_ptr<Expression> ExpressionBinder::combineConjunctiveExpressions(
-    std::shared_ptr<Expression> left, std::shared_ptr<Expression> right) {
+std::shared_ptr<Expression> ExpressionBinder::combineBooleanExpressions(
+    ExpressionType expressionType, std::shared_ptr<Expression> left,
+    std::shared_ptr<Expression> right) {
     if (left == nullptr) {
         return right;
     } else if (right == nullptr) {
         return left;
     } else {
-        return bindBooleanExpression(AND, expression_vector{std::move(left), std::move(right)});
+        return bindBooleanExpression(expressionType,
+            expression_vector{std::move(left), std::move(right)});
     }
 }
 

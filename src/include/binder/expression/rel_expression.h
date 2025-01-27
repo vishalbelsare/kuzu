@@ -1,7 +1,8 @@
 #pragma once
 
-#include "common/exception.h"
-#include "common/query_rel_type.h"
+#include "common/constants.h"
+#include "common/enums/extend_direction.h"
+#include "common/enums/query_rel_type.h"
 #include "node_expression.h"
 
 namespace kuzu {
@@ -16,70 +17,119 @@ enum class RelDirectionType : uint8_t {
 class RelExpression;
 
 struct RecursiveInfo {
-    uint64_t lowerBound;
-    uint64_t upperBound;
-    std::shared_ptr<NodeExpression> node;
+    /*
+     * E.g. [e*1..2 (r, n) | WHERE n.age > 10 AND r.year = 2012 ]
+     * lowerBound = 1
+     * upperBound = 2
+     * node = n
+     * nodeCopy = n (see comment below)
+     * rel = r
+     * predicates = [n.age > 10, r.year = 2012]
+     * */
+    uint64_t lowerBound = 0;
+    uint64_t upperBound = 0;
+    std::shared_ptr<NodeExpression> node = nullptr;
     // NodeCopy has the same fields as node but a different unique name.
     // We use nodeCopy to plan recursive plan because boundNode&nbrNode cannot be the same.
-    std::shared_ptr<NodeExpression> nodeCopy;
-    std::shared_ptr<RelExpression> rel;
-    std::shared_ptr<Expression> lengthExpression;
-    expression_vector predicates;
+    std::shared_ptr<NodeExpression> nodeCopy = nullptr;
+    std::shared_ptr<RelExpression> rel = nullptr;
 
-    RecursiveInfo(uint64_t lowerBound, uint64_t upperBound, std::shared_ptr<NodeExpression> node,
-        std::shared_ptr<NodeExpression> nodeCopy, std::shared_ptr<RelExpression> rel,
-        std::shared_ptr<Expression> lengthExpression, expression_vector predicates)
-        : lowerBound{lowerBound}, upperBound{upperBound}, node{std::move(node)},
-          nodeCopy{std::move(nodeCopy)}, rel{std::move(rel)},
-          lengthExpression{std::move(lengthExpression)}, predicates{std::move(predicates)} {}
+    std::shared_ptr<Expression> lengthExpression = nullptr;
+    // Node predicate should only be applied to intermediate node. So we need to avoid executing
+    // predicate for src and dst node. This is done by rewriting node predicate 'P' as 'Flag OR P'
+    // During recursive computation, we set 'Flag' to True to avoid executing 'P'.
+    std::shared_ptr<Expression> nodePredicateExecFlag = nullptr;
+    std::shared_ptr<Expression> nodePredicate = nullptr;
+    // The node predicate we use for recursive join & gds is different. Until we migrate recursive
+    // extend to GDS, we need to keep this field.
+    std::shared_ptr<Expression> originalNodePredicate = nullptr;
+
+    std::shared_ptr<Expression> relPredicate = nullptr;
+    // Projection list
+    expression_vector nodeProjectionList;
+    expression_vector relProjectionList;
+    // Path expressions
+    std::shared_ptr<Expression> pathNodeIDsExpr = nullptr;
+    std::shared_ptr<Expression> pathEdgeIDsExpr = nullptr;
+    std::shared_ptr<Expression> pathEdgeDirectionsExpr = nullptr;
+    // Edge property representing weight
+    std::shared_ptr<Expression> weightPropertyExpr = nullptr;
+    std::shared_ptr<Expression> weightOutputExpr = nullptr;
 };
 
-class RelExpression : public NodeOrRelExpression {
+class RelExpression final : public NodeOrRelExpression {
 public:
     RelExpression(common::LogicalType dataType, std::string uniqueName, std::string variableName,
-        std::vector<common::table_id_t> tableIDs, std::shared_ptr<NodeExpression> srcNode,
+        std::vector<catalog::TableCatalogEntry*> entries, std::shared_ptr<NodeExpression> srcNode,
         std::shared_ptr<NodeExpression> dstNode, RelDirectionType directionType,
         common::QueryRelType relType)
         : NodeOrRelExpression{std::move(dataType), std::move(uniqueName), std::move(variableName),
-              std::move(tableIDs)},
-          srcNode{std::move(srcNode)}, dstNode{std::move(dstNode)},
-          directionType{directionType}, relType{relType} {}
+              std::move(entries)},
+          srcNode{std::move(srcNode)}, dstNode{std::move(dstNode)}, directionType{directionType},
+          relType{relType} {}
 
-    inline bool isBoundByMultiLabeledNode() const {
+    bool isRecursive() const {
+        return dataType.getLogicalTypeID() == common::LogicalTypeID::RECURSIVE_REL;
+    }
+
+    bool isBoundByMultiLabeledNode() const {
         return srcNode->isMultiLabeled() || dstNode->isMultiLabeled();
     }
 
-    inline std::shared_ptr<NodeExpression> getSrcNode() const { return srcNode; }
-    inline std::string getSrcNodeName() const { return srcNode->getUniqueName(); }
-    inline void setDstNode(std::shared_ptr<NodeExpression> node) { dstNode = std::move(node); }
-    inline std::shared_ptr<NodeExpression> getDstNode() const { return dstNode; }
-    inline std::string getDstNodeName() const { return dstNode->getUniqueName(); }
+    std::shared_ptr<NodeExpression> getSrcNode() const { return srcNode; }
+    std::string getSrcNodeName() const { return srcNode->getUniqueName(); }
+    void setDstNode(std::shared_ptr<NodeExpression> node) { dstNode = std::move(node); }
+    std::shared_ptr<NodeExpression> getDstNode() const { return dstNode; }
+    std::string getDstNodeName() const { return dstNode->getUniqueName(); }
 
-    inline common::QueryRelType getRelType() const { return relType; }
+    void setLeftNode(std::shared_ptr<NodeExpression> node) { leftNode = std::move(node); }
+    std::shared_ptr<NodeExpression> getLeftNode() const { return leftNode; }
+    void setRightNode(std::shared_ptr<NodeExpression> node) { rightNode = std::move(node); }
+    std::shared_ptr<NodeExpression> getRightNode() const { return rightNode; }
 
-    inline RelDirectionType getDirectionType() const { return directionType; }
+    common::QueryRelType getRelType() const { return relType; }
 
-    inline std::shared_ptr<Expression> getInternalIDProperty() const {
+    void setDirectionExpr(std::shared_ptr<Expression> expr) { directionExpr = std::move(expr); }
+    bool hasDirectionExpr() const { return directionExpr != nullptr; }
+    std::shared_ptr<Expression> getDirectionExpr() const { return directionExpr; }
+    RelDirectionType getDirectionType() const { return directionType; }
+
+    std::shared_ptr<Expression> getInternalIDProperty() const {
         return getPropertyExpression(common::InternalKeyword::ID);
     }
 
-    inline void setRecursiveInfo(std::unique_ptr<RecursiveInfo> recursiveInfo_) {
+    void setRecursiveInfo(std::unique_ptr<RecursiveInfo> recursiveInfo_) {
         recursiveInfo = std::move(recursiveInfo_);
     }
-    inline RecursiveInfo* getRecursiveInfo() const { return recursiveInfo.get(); }
-    inline size_t getLowerBound() const { return recursiveInfo->lowerBound; }
-    inline size_t getUpperBound() const { return recursiveInfo->upperBound; }
-    inline std::shared_ptr<Expression> getLengthExpression() const {
+    const RecursiveInfo* getRecursiveInfo() const { return recursiveInfo.get(); }
+    size_t getLowerBound() const { return recursiveInfo->lowerBound; }
+    size_t getUpperBound() const { return recursiveInfo->upperBound; }
+    std::shared_ptr<Expression> getLengthExpression() const {
         return recursiveInfo->lengthExpression;
     }
 
-    inline bool isSelfLoop() const { return *srcNode == *dstNode; }
+    bool isSelfLoop() const { return *srcNode == *dstNode; }
+
+    std::string detailsToString() const;
+
+    // if multiple tables match the pattern
+    // returns the intersection of available extend directions for all matched tables
+    std::vector<common::ExtendDirection> getExtendDirections() const;
 
 private:
+    // Start node if a directed arrow is given. Left node otherwise.
     std::shared_ptr<NodeExpression> srcNode;
+    // End node if a directed arrow is given. Right node otherwise.
     std::shared_ptr<NodeExpression> dstNode;
+    std::shared_ptr<NodeExpression> leftNode;
+    std::shared_ptr<NodeExpression> rightNode;
+    // Whether relationship is directed.
     RelDirectionType directionType;
+    // Direction expr is nullptr when direction type is SINGLE
+    std::shared_ptr<Expression> directionExpr;
+    // Whether relationship type is recursive.
     common::QueryRelType relType;
+    // Null if relationship type is non-recursive.
     std::unique_ptr<RecursiveInfo> recursiveInfo;
 };
 
