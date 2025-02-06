@@ -36,11 +36,9 @@ const uint8_t NULL_BOOL = 2;
  *     -            T              -              T               2
  * */
 struct And {
-    static inline void operation(
-        bool left, bool right, uint8_t& result, bool isLeftNull, bool isRightNull) {
-        if (!left && !isLeftNull) {
-            result = false;
-        } else if (!right && !isRightNull) {
+    static inline void operation(bool left, bool right, uint8_t& result, bool isLeftNull,
+        bool isRightNull) {
+        if ((!left && !isLeftNull) || (!right && !isRightNull)) {
             result = false;
         } else if (isLeftNull || isRightNull) {
             result = NULL_BOOL;
@@ -66,11 +64,9 @@ struct And {
  *     -            T              -              T               2
  * */
 struct Or {
-    static inline void operation(
-        bool left, bool right, uint8_t& result, bool isLeftNull, bool isRightNull) {
-        if (left && !isLeftNull) {
-            result = true;
-        } else if (right && !isRightNull) {
+    static inline void operation(bool left, bool right, uint8_t& result, bool isLeftNull,
+        bool isRightNull) {
+        if ((left && !isLeftNull) || (right && !isRightNull)) {
             result = true;
         } else if (isLeftNull || isRightNull) {
             result = NULL_BOOL;
@@ -96,8 +92,8 @@ struct Or {
  *     -            T              -              T               2
  * */
 struct Xor {
-    static inline void operation(
-        bool left, bool right, uint8_t& result, bool isLeftNull, bool isRightNull) {
+    static inline void operation(bool left, bool right, uint8_t& result, bool isLeftNull,
+        bool isRightNull) {
         if (isLeftNull || isRightNull) {
             result = NULL_BOOL;
         } else {

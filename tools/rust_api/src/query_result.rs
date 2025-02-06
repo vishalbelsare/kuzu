@@ -98,29 +98,6 @@ impl QueryResult {
             .collect()
     }
 
-    /// Writes the query result to a csv file
-    ///
-    /// # Arguments
-    /// * `path`: The path of the output csv file
-    /// * `options`: Custom CSV output options
-    ///
-    /// ```ignore
-    /// result.write_to_csv("output.csv", CSVOptions::default().delimiter(','))?;
-    /// ```
-    pub fn write_to_csv<P: AsRef<std::path::Path>>(
-        &mut self,
-        path: P,
-        options: CSVOptions,
-    ) -> Result<(), crate::error::Error> {
-        Ok(ffi::query_result_write_to_csv(
-            self.result.pin_mut(),
-            &path.as_ref().display().to_string(),
-            options.delimiter as i8,
-            options.escape_character as i8,
-            options.newline as i8,
-        )?)
-    }
-
     #[cfg(feature = "arrow")]
     /// Produces an iterator over the results as [RecordBatch](arrow::record_batch::RecordBatch)es,
     /// split into chunks of the given size.
@@ -191,7 +168,7 @@ impl<'qr> Iterator for ArrowIterator<'qr> {
             )
             .expect("Failed to get next recordbatch");
             let struct_array: arrow::array::StructArray =
-                arrow::ffi::from_ffi(array.0, &self.schema)
+                unsafe { arrow::ffi::from_ffi(array.0, &self.schema) }
                     .expect("Failed to convert ArrowArray from C data")
                     .into();
             Some(struct_array.into())
@@ -223,14 +200,13 @@ impl std::fmt::Display for QueryResult {
 #[cfg(test)]
 mod tests {
     use crate::connection::Connection;
-    use crate::database::Database;
+    use crate::database::{Database, SystemConfig};
     use crate::logical_type::LogicalType;
-    use crate::query_result::CSVOptions;
 
     #[test]
     fn test_query_result_metadata() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
         let connection = Connection::new(&db)?;
 
         // Create schema.
@@ -254,36 +230,12 @@ mod tests {
     }
 
     #[test]
-    fn test_csv() -> anyhow::Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let path = temp_dir.path();
-        let db = Database::new(path, 0)?;
-        let conn = Connection::new(&db)?;
-        conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
-        conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
-        let mut result = conn.query("MATCH (a:Person) RETURN a.name AS NAME, a.age AS AGE;")?;
-        result.write_to_csv(
-            path.join("output.csv"),
-            CSVOptions::default().delimiter(','),
-        )?;
-        let data = std::fs::read_to_string(path.join("output.csv"))?;
-        if cfg!(windows) {
-            // Windows translates the newlines automatically in text mode
-            assert_eq!(data, "Alice,25\r\n");
-        } else {
-            assert_eq!(data, "Alice,25\n");
-        }
-        temp_dir.close()?;
-        Ok(())
-    }
-
-    #[test]
     #[cfg(feature = "arrow")]
     fn test_arrow() -> anyhow::Result<()> {
         use arrow::array::{Int64Array, StringArray};
         let temp_dir = tempfile::tempdir()?;
         let path = temp_dir.path();
-        let db = Database::new(path, 0)?;
+        let db = Database::new(path, SystemConfig::default())?;
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
         conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;

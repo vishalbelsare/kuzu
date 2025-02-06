@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-#include "parser/macro/create_macro.h"
+#include "parser/create_macro.h"
 
 namespace kuzu {
 namespace function {
@@ -13,6 +13,8 @@ struct ScalarMacroFunction {
     std::unique_ptr<parser::ParsedExpression> expression;
     std::vector<std::string> positionalArgs;
     parser::default_macro_args defaultArgs;
+
+    ScalarMacroFunction() = default;
 
     ScalarMacroFunction(std::unique_ptr<parser::ParsedExpression> expression,
         std::vector<std::string> positionalArgs, parser::default_macro_args defaultArgs)
@@ -31,10 +33,11 @@ struct ScalarMacroFunction {
 
     std::unique_ptr<ScalarMacroFunction> copy() const;
 
-    void serialize(common::FileInfo* fileInfo, uint64_t& offset) const;
+    void serialize(common::Serializer& serializer) const;
 
-    static std::unique_ptr<ScalarMacroFunction> deserialize(
-        common::FileInfo* fileInfo, uint64_t& offset);
+    std::string toCypher(const std::string& name) const;
+
+    static std::unique_ptr<ScalarMacroFunction> deserialize(common::Deserializer& deserializer);
 };
 
 } // namespace function

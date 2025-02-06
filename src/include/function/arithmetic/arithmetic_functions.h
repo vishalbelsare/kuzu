@@ -1,86 +1,16 @@
 #pragma once
 
 #include <cmath>
-#include <cstdlib>
 
-#include "common/type_utils.h"
+#include "common/types/int128_t.h"
 
 namespace kuzu {
 namespace function {
-
-struct Add {
-    template<class A, class B, class R>
-    static inline void operation(A& left, B& right, R& result) {
-        result = left + right;
-    }
-};
-
-struct Subtract {
-    template<class A, class B, class R>
-    static inline void operation(A& left, B& right, R& result) {
-        result = left - right;
-    }
-};
-
-struct Multiply {
-    template<class A, class B, class R>
-    static inline void operation(A& left, B& right, R& result) {
-        result = left * right;
-    }
-};
-
-struct Divide {
-    template<class A, class B, class R>
-    static inline void operation(A& left, B& right, R& result) {
-        result = left / right;
-    }
-};
-
-template<>
-inline void Divide::operation(int64_t& left, int64_t& right, int64_t& result) {
-    if (right == 0) {
-        // According to c++ standard, only INT64 / 0(INT64) is undefined. (eg. DOUBLE / 0(INT64) and
-        // INT64 / 0.0(DOUBLE) are well-defined).
-        throw common::RuntimeException("Divide by zero.");
-    }
-    result = left / right;
-}
-
-struct Modulo {
-    template<class A, class B, class R>
-    static inline void operation(A& left, B& right, R& result) {
-        result = fmod(left, right);
-    }
-};
-
-template<>
-inline void Modulo::operation(int64_t& left, int64_t& right, int64_t& result) {
-    if (right == 0) {
-        // According to c++ standard, only INT64 % 0(INT64) is undefined. (eg. DOUBLE % 0(INT64) and
-        // INT64 % 0.0(DOUBLE) are well-defined).
-        throw common::RuntimeException("Modulo by zero.");
-    }
-    result = left % right;
-}
 
 struct Power {
     template<class A, class B, class R>
     static inline void operation(A& left, B& right, R& result) {
         result = pow(left, right);
-    }
-};
-
-struct Negate {
-    template<class T>
-    static inline void operation(T& input, T& result) {
-        result = -input;
-    }
-};
-
-struct Abs {
-    template<class T>
-    static inline void operation(T& input, T& result) {
-        result = abs(input);
     }
 };
 
@@ -91,6 +21,11 @@ struct Floor {
     }
 };
 
+template<>
+inline void Floor::operation(common::int128_t& input, common::int128_t& result) {
+    result = input;
+}
+
 struct Ceil {
     template<class T>
     static inline void operation(T& input, T& result) {
@@ -98,31 +33,36 @@ struct Ceil {
     }
 };
 
+template<>
+inline void Ceil::operation(common::int128_t& input, common::int128_t& result) {
+    result = input;
+}
+
 struct Sin {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = sin(input);
     }
 };
 
 struct Cos {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = cos(input);
     }
 };
 
 struct Tan {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = tan(input);
     }
 };
 
 struct Cot {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
-        double tanValue;
+    static inline void operation(T& input, double& result) {
+        double tanValue = 0;
         Tan::operation(input, tanValue);
         result = 1 / tanValue;
     }
@@ -130,28 +70,28 @@ struct Cot {
 
 struct Asin {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = asin(input);
     }
 };
 
 struct Acos {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = acos(input);
     }
 };
 
 struct Atan {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = atan(input);
     }
 };
 
 struct Even {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = input >= 0 ? ceil(input) : floor(input);
         // Note: c++ doesn't support double % integer, so we have to use the following code to check
         // whether result is odd or even.
@@ -179,14 +119,14 @@ struct Sign {
 
 struct Sqrt {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = sqrt(input);
     }
 };
 
 struct Cbrt {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = cbrt(input);
     }
 };
@@ -200,56 +140,57 @@ struct Gamma {
 
 struct Lgamma {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
-        result = lgamma(input);
+    static inline void operation(T& input, double& result) {
+        result =
+            lgamma(input); // NOLINT(concurrency-mt-unsafe): We don't use the thread-unsafe signgam.
     }
 };
 
 struct Ln {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = log(input);
     }
 };
 
 struct Log {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = log10(input);
     }
 };
 
 struct Log2 {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = log2(input);
     }
 };
 
 struct Degrees {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = input * 180 / M_PI;
     }
 };
 
 struct Radians {
     template<class T>
-    static inline void operation(T& input, double_t& result) {
+    static inline void operation(T& input, double& result) {
         result = input * M_PI / 180;
     }
 };
 
 struct Atan2 {
     template<class A, class B>
-    static inline void operation(A& left, B& right, double_t& result) {
+    static inline void operation(A& left, B& right, double& result) {
         result = atan2(left, right);
     }
 };
 
 struct Round {
     template<class A, class B>
-    static inline void operation(A& left, B& right, double_t& result) {
+    static inline void operation(A& left, B& right, double& result) {
         auto multiplier = pow(10, right);
         result = round(left * multiplier) / multiplier;
     }
@@ -286,7 +227,7 @@ struct BitShiftRight {
 };
 
 struct Pi {
-    static inline void operation(double_t& result) { result = M_PI; }
+    static inline void operation(double& result) { result = M_PI; }
 };
 
 } // namespace function

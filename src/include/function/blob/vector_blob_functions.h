@@ -1,20 +1,26 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-struct OctetLengthVectorFunctions : public VectorFunction {
-    static vector_function_definitions getDefinitions();
+struct OctetLengthFunctions {
+    static constexpr const char* name = "OCTET_LENGTH";
+
+    static function_set getFunctionSet();
 };
 
-struct EncodeVectorFunctions : public VectorFunction {
-    static vector_function_definitions getDefinitions();
+struct EncodeFunctions {
+    static constexpr const char* name = "ENCODE";
+
+    static function_set getFunctionSet();
 };
 
-struct DecodeVectorFunctions : public VectorFunction {
-    static vector_function_definitions getDefinitions();
+struct DecodeFunctions {
+    static constexpr const char* name = "DECODE";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

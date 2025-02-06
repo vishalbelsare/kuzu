@@ -1,7 +1,6 @@
 #pragma once
 
-#include "aggregate_function.h"
-#include "function/comparison/comparison_functions.h"
+#include "function/aggregate_function.h"
 
 namespace kuzu {
 namespace function {
@@ -10,42 +9,31 @@ template<typename T>
 struct MinMaxFunction {
 
     struct MinMaxState : public AggregateState {
-        inline uint32_t getStateSize() const override { return sizeof(*this); }
-        inline void moveResultToVector(common::ValueVector* outputVector, uint64_t pos) override {
+        uint32_t getStateSize() const override { return sizeof(*this); }
+        void moveResultToVector(common::ValueVector* outputVector, uint64_t pos) override {
             outputVector->setValue(pos, val);
             overflowBuffer.reset();
         }
-        inline void setVal(T& val_, storage::MemoryManager* memoryManager) { val = val_; }
+        void setVal(T& val_, storage::MemoryManager* /*memoryManager*/) { val = val_; }
 
         std::unique_ptr<common::InMemOverflowBuffer> overflowBuffer;
-        T val;
+        T val{};
     };
 
     static std::unique_ptr<AggregateState> initialize() { return std::make_unique<MinMaxState>(); }
 
     template<class OP>
-    static void updateAll(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
+    static void updateAll(uint8_t* state_, common::ValueVector* input, uint64_t /*multiplicity*/,
         storage::MemoryManager* memoryManager) {
-        assert(!input->state->isFlat());
-        auto state = reinterpret_cast<MinMaxState*>(state_);
-        if (input->hasNoNullsGuarantee()) {
-            for (auto i = 0u; i < input->state->selVector->selectedSize; ++i) {
-                auto pos = input->state->selVector->selectedPositions[i];
-                updateSingleValue<OP>(state, input, pos, memoryManager);
-            }
-        } else {
-            for (auto i = 0u; i < input->state->selVector->selectedSize; ++i) {
-                auto pos = input->state->selVector->selectedPositions[i];
-                if (!input->isNull(pos)) {
-                    updateSingleValue<OP>(state, input, pos, memoryManager);
-                }
-            }
-        }
+        KU_ASSERT(!input->state->isFlat());
+        auto* state = reinterpret_cast<MinMaxState*>(state_);
+        input->forEachNonNull(
+            [&](auto pos) { updateSingleValue<OP>(state, input, pos, memoryManager); });
     }
 
     template<class OP>
-    static inline void updatePos(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
-        uint32_t pos, storage::MemoryManager* memoryManager) {
+    static inline void updatePos(uint8_t* state_, common::ValueVector* input,
+        uint64_t /*multiplicity*/, uint32_t pos, storage::MemoryManager* memoryManager) {
         updateSingleValue<OP>(reinterpret_cast<MinMaxState*>(state_), input, pos, memoryManager);
     }
 
@@ -57,7 +45,7 @@ struct MinMaxFunction {
             state->setVal(val, memoryManager);
             state->isNull = false;
         } else {
-            uint8_t compare_result;
+            uint8_t compare_result = 0;
             OP::template operation<T, T>(val, state->val, compare_result, nullptr /* leftVector */,
                 nullptr /* rightVector */);
             if (compare_result) {
@@ -67,18 +55,18 @@ struct MinMaxFunction {
     }
 
     template<class OP>
-    static void combine(
-        uint8_t* state_, uint8_t* otherState_, storage::MemoryManager* memoryManager) {
-        auto otherState = reinterpret_cast<MinMaxState*>(otherState_);
+    static void combine(uint8_t* state_, uint8_t* otherState_,
+        storage::MemoryManager* memoryManager) {
+        auto* otherState = reinterpret_cast<MinMaxState*>(otherState_);
         if (otherState->isNull) {
             return;
         }
-        auto state = reinterpret_cast<MinMaxState*>(state_);
+        auto* state = reinterpret_cast<MinMaxState*>(state_);
         if (state->isNull) {
             state->setVal(otherState->val, memoryManager);
             state->isNull = false;
         } else {
-            uint8_t compareResult;
+            uint8_t compareResult = 0;
             OP::template operation<T, T>(otherState->val, state->val, compareResult,
                 nullptr /* leftVector */, nullptr /* rightVector */);
             if (compareResult) {
@@ -88,12 +76,12 @@ struct MinMaxFunction {
         otherState->overflowBuffer.reset();
     }
 
-    static void finalize(uint8_t* state_) {}
+    static void finalize(uint8_t* /*state_*/) {}
 };
 
 template<>
-void MinMaxFunction<common::ku_string_t>::MinMaxState::setVal(
-    common::ku_string_t& val_, storage::MemoryManager* memoryManager) {
+void MinMaxFunction<common::ku_string_t>::MinMaxState::setVal(common::ku_string_t& val_,
+    storage::MemoryManager* memoryManager) {
     if (overflowBuffer == nullptr) {
         overflowBuffer = std::make_unique<common::InMemOverflowBuffer>(memoryManager);
     }

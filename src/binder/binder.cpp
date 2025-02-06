@@ -1,108 +1,146 @@
 #include "binder/binder.h"
 
-#include "binder/expression/variable_expression.h"
+#include "binder/bound_statement_rewriter.h"
+#include "catalog/catalog.h"
+#include "common/copier_config/csv_reader_config.h"
+#include "common/exception/binder.h"
+#include "common/string_format.h"
 #include "common/string_utils.h"
+#include "function/built_in_function_utils.h"
+#include "function/table/table_function.h"
+#include "processor/operator/persistent/reader/csv/parallel_csv_reader.h"
+#include "processor/operator/persistent/reader/csv/serial_csv_reader.h"
+#include "processor/operator/persistent/reader/npy/npy_reader.h"
+#include "processor/operator/persistent/reader/parquet/parquet_reader.h"
 
-using namespace kuzu::common;
-using namespace kuzu::parser;
 using namespace kuzu::catalog;
+using namespace kuzu::common;
+using namespace kuzu::function;
+using namespace kuzu::parser;
+using namespace kuzu::processor;
 
 namespace kuzu {
 namespace binder {
 
 std::unique_ptr<BoundStatement> Binder::bind(const Statement& statement) {
+    std::unique_ptr<BoundStatement> boundStatement;
     switch (statement.getStatementType()) {
-    case StatementType::CREATE_NODE_TABLE: {
-        return bindCreateNodeTableClause(statement);
-    }
-    case StatementType::CREATE_REL_TABLE: {
-        return bindCreateRelTableClause(statement);
-    }
-    case StatementType::COPY: {
-        return bindCopyClause(statement);
-    }
-    case StatementType::DROP_TABLE: {
-        return bindDropTableClause(statement);
-    }
-    case StatementType::RENAME_TABLE: {
-        return bindRenameTableClause(statement);
-    }
-    case StatementType::ADD_PROPERTY: {
-        return bindAddPropertyClause(statement);
-    }
-    case StatementType::DROP_PROPERTY: {
-        return bindDropPropertyClause(statement);
-    }
-    case StatementType::RENAME_PROPERTY: {
-        return bindRenamePropertyClause(statement);
-    }
+    case StatementType::CREATE_TABLE: {
+        boundStatement = bindCreateTable(statement);
+    } break;
+    case StatementType::CREATE_TYPE: {
+        boundStatement = bindCreateType(statement);
+    } break;
+    case StatementType::CREATE_SEQUENCE: {
+        boundStatement = bindCreateSequence(statement);
+    } break;
+    case StatementType::COPY_FROM: {
+        boundStatement = bindCopyFromClause(statement);
+    } break;
+    case StatementType::COPY_TO: {
+        boundStatement = bindCopyToClause(statement);
+    } break;
+    case StatementType::DROP: {
+        boundStatement = bindDrop(statement);
+    } break;
+    case StatementType::ALTER: {
+        boundStatement = bindAlter(statement);
+    } break;
     case StatementType::QUERY: {
-        return bindQuery((const RegularQuery&)statement);
-    }
+        boundStatement = bindQuery(statement);
+    } break;
     case StatementType::STANDALONE_CALL: {
-        return bindStandaloneCall(statement);
-    }
+        boundStatement = bindStandaloneCall(statement);
+    } break;
+    case StatementType::STANDALONE_CALL_FUNCTION: {
+        boundStatement = bindStandaloneCallFunction(statement);
+    } break;
     case StatementType::EXPLAIN: {
-        return bindExplain(statement);
-    }
+        boundStatement = bindExplain(statement);
+    } break;
     case StatementType::CREATE_MACRO: {
-        return bindCreateMacro(statement);
+        boundStatement = bindCreateMacro(statement);
+    } break;
+    case StatementType::TRANSACTION: {
+        boundStatement = bindTransaction(statement);
+    } break;
+    case StatementType::EXTENSION: {
+        boundStatement = bindExtension(statement);
+    } break;
+    case StatementType::EXPORT_DATABASE: {
+        boundStatement = bindExportDatabaseClause(statement);
+    } break;
+    case StatementType::IMPORT_DATABASE: {
+        boundStatement = bindImportDatabaseClause(statement);
+    } break;
+    case StatementType::ATTACH_DATABASE: {
+        boundStatement = bindAttachDatabase(statement);
+    } break;
+    case StatementType::DETACH_DATABASE: {
+        boundStatement = bindDetachDatabase(statement);
+    } break;
+    case StatementType::USE_DATABASE: {
+        boundStatement = bindUseDatabase(statement);
+    } break;
+    default: {
+        KU_UNREACHABLE;
     }
-    default:
-        assert(false);
     }
+    BoundStatementRewriter::rewrite(*boundStatement, *clientContext);
+    return boundStatement;
 }
 
 std::shared_ptr<Expression> Binder::bindWhereExpression(const ParsedExpression& parsedExpression) {
     auto whereExpression = expressionBinder.bindExpression(parsedExpression);
-    ExpressionBinder::implicitCastIfNecessary(whereExpression, LogicalTypeID::BOOL);
+    expressionBinder.implicitCastIfNecessary(whereExpression, LogicalType::BOOL());
     return whereExpression;
 }
 
-table_id_t Binder::bindRelTableID(const std::string& tableName) const {
-    if (!catalog.getReadOnlyVersion()->containRelTable(tableName)) {
-        throw BinderException("Rel table " + tableName + " does not exist.");
-    }
-    return catalog.getReadOnlyVersion()->getTableID(tableName);
+std::shared_ptr<Expression> Binder::createVariable(std::string_view name, LogicalTypeID typeID) {
+    return createVariable(std::string(name), LogicalType{typeID});
 }
 
-table_id_t Binder::bindNodeTableID(const std::string& tableName) const {
-    if (!catalog.getReadOnlyVersion()->containNodeTable(tableName)) {
-        throw BinderException("Node table " + tableName + " does not exist.");
-    }
-    return catalog.getReadOnlyVersion()->getTableID(tableName);
+std::shared_ptr<Expression> Binder::createVariable(const std::string& name,
+    LogicalTypeID logicalTypeID) {
+    return createVariable(name, LogicalType{logicalTypeID});
 }
 
-std::shared_ptr<Expression> Binder::createVariable(
-    const std::string& name, const LogicalType& dataType) {
-    if (scope->contains(name)) {
+std::shared_ptr<Expression> Binder::createVariable(const std::string& name,
+    const LogicalType& dataType) {
+    if (scope.contains(name)) {
         throw BinderException("Variable " + name + " already exists.");
     }
-    auto uniqueName = getUniqueExpressionName(name);
-    auto expression = expressionBinder.createVariableExpression(dataType, uniqueName, name);
+    auto expression = expressionBinder.createVariableExpression(dataType.copy(), name);
     expression->setAlias(name);
-    scope->addExpression(name, expression);
+    addToScope(name, expression);
     return expression;
 }
 
-void Binder::validateProjectionColumnNamesAreUnique(const expression_vector& expressions) {
-    auto existColumnNames = std::unordered_set<std::string>();
-    for (auto& expression : expressions) {
-        auto columnName = expression->hasAlias() ? expression->getAlias() : expression->toString();
-        if (existColumnNames.contains(columnName)) {
-            throw BinderException(
-                "Multiple result column with the same name " + columnName + " are not supported.");
-        }
-        existColumnNames.insert(columnName);
-    }
+std::shared_ptr<Expression> Binder::createInvisibleVariable(const std::string& name,
+    const LogicalType& dataType) const {
+    auto expression = expressionBinder.createVariableExpression(dataType.copy(), name);
+    expression->setAlias(name);
+    return expression;
 }
 
-void Binder::validateProjectionColumnsInWithClauseAreAliased(const expression_vector& expressions) {
-    for (auto& expression : expressions) {
-        if (!expression->hasAlias()) {
-            throw BinderException("Expression in WITH must be aliased (use AS).");
-        }
+expression_vector Binder::createVariables(const std::vector<std::string>& names,
+    const std::vector<common::LogicalType>& types) {
+    KU_ASSERT(names.size() == types.size());
+    expression_vector variables;
+    for (auto i = 0u; i < names.size(); ++i) {
+        variables.push_back(createVariable(names[i], types[i]));
     }
+    return variables;
+}
+
+expression_vector Binder::createInvisibleVariables(const std::vector<std::string>& names,
+    const std::vector<LogicalType>& types) const {
+    KU_ASSERT(names.size() == types.size());
+    expression_vector variables;
+    for (auto i = 0u; i < names.size(); ++i) {
+        variables.push_back(createInvisibleVariable(names[i], types[i]));
+    }
+    return variables;
 }
 
 void Binder::validateOrderByFollowedBySkipOrLimitInWithClause(
@@ -113,93 +151,115 @@ void Binder::validateOrderByFollowedBySkipOrLimitInWithClause(
     }
 }
 
-void Binder::validateUnionColumnsOfTheSameType(
-    const std::vector<std::unique_ptr<BoundSingleQuery>>& boundSingleQueries) {
-    if (boundSingleQueries.size() <= 1) {
-        return;
-    }
-    auto expressionsToProject = boundSingleQueries[0]->getExpressionsToCollect();
-    for (auto i = 1u; i < boundSingleQueries.size(); i++) {
-        auto expressionsToProjectToCheck = boundSingleQueries[i]->getExpressionsToCollect();
-        if (expressionsToProject.size() != expressionsToProjectToCheck.size()) {
-            throw BinderException("The number of columns to union/union all must be the same.");
-        }
-        // Check whether the dataTypes in union expressions are exactly the same in each single
-        // query.
-        for (auto j = 0u; j < expressionsToProject.size(); j++) {
-            ExpressionBinder::validateExpectedDataType(*expressionsToProjectToCheck[j],
-                expressionsToProject[j]->dataType.getLogicalTypeID());
-        }
-    }
-}
-
-void Binder::validateIsAllUnionOrUnionAll(const BoundRegularQuery& regularQuery) {
-    auto unionAllExpressionCounter = 0u;
-    for (auto i = 0u; i < regularQuery.getNumSingleQueries() - 1; i++) {
-        unionAllExpressionCounter += regularQuery.getIsUnionAll(i);
-    }
-    if ((0 < unionAllExpressionCounter) &&
-        (unionAllExpressionCounter < regularQuery.getNumSingleQueries() - 1)) {
-        throw BinderException("Union and union all can't be used together.");
-    }
-}
-
-void Binder::validateReturnNotFollowUpdate(const NormalizedSingleQuery& singleQuery) {
-    for (auto i = 0u; i < singleQuery.getNumQueryParts(); ++i) {
-        auto normalizedQueryPart = singleQuery.getQueryPart(i);
-        if (normalizedQueryPart->hasUpdatingClause() && normalizedQueryPart->hasProjectionBody()) {
-            throw BinderException("Return/With after update is not supported.");
-        }
-    }
-}
-
-void Binder::validateReadNotFollowUpdate(const NormalizedSingleQuery& singleQuery) {
-    bool hasSeenUpdateClause = false;
-    for (auto i = 0u; i < singleQuery.getNumQueryParts(); ++i) {
-        auto normalizedQueryPart = singleQuery.getQueryPart(i);
-        if (hasSeenUpdateClause && normalizedQueryPart->hasReadingClause()) {
-            throw BinderException("Read after update is not supported.");
-        }
-        hasSeenUpdateClause |= normalizedQueryPart->hasUpdatingClause();
-    }
-}
-
-void Binder::validateTableExist(const Catalog& _catalog, std::string& tableName) {
-    if (!_catalog.getReadOnlyVersion()->containNodeTable(tableName) &&
-        !_catalog.getReadOnlyVersion()->containRelTable(tableName)) {
-        throw BinderException("Node/Rel " + tableName + " does not exist.");
-    }
-}
-
-bool Binder::validateStringParsingOptionName(std::string& parsingOptionName) {
-    for (auto i = 0; i < std::size(CopyConstants::STRING_CSV_PARSING_OPTIONS); i++) {
-        if (parsingOptionName == CopyConstants::STRING_CSV_PARSING_OPTIONS[i]) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void Binder::validateNodeTableHasNoEdge(const Catalog& _catalog, table_id_t tableID) {
-    for (auto& tableIDSchema : _catalog.getReadOnlyVersion()->getRelTableSchemas()) {
-        if (tableIDSchema.second->isSrcOrDstTable(tableID)) {
-            throw BinderException(StringUtils::string_format(
-                "Cannot delete a node table with edges. It is on the edges of rel: {}.",
-                tableIDSchema.second->tableName));
-        }
-    }
-}
-
 std::string Binder::getUniqueExpressionName(const std::string& name) {
     return "_" + std::to_string(lastExpressionId++) + "_" + name;
 }
 
-std::unique_ptr<BinderScope> Binder::saveScope() {
-    return scope->copy();
+struct ReservedNames {
+    // Column name that might conflict with internal names.
+    static std::unordered_set<std::string> getColumnNames() {
+        return {
+            InternalKeyword::ID,
+            InternalKeyword::LABEL,
+            InternalKeyword::SRC,
+            InternalKeyword::DST,
+            InternalKeyword::DIRECTION,
+            InternalKeyword::LENGTH,
+            InternalKeyword::NODES,
+            InternalKeyword::RELS,
+            InternalKeyword::PLACE_HOLDER,
+            StringUtils::getUpper(InternalKeyword::ROW_OFFSET),
+            StringUtils::getUpper(InternalKeyword::SRC_OFFSET),
+            StringUtils::getUpper(InternalKeyword::DST_OFFSET),
+        };
+    }
+
+    // Properties that should be hidden from user access.
+    static std::unordered_set<std::string> getPropertyLookupName() {
+        return {
+            InternalKeyword::ID,
+        };
+    }
+};
+
+bool Binder::reservedInColumnName(const std::string& name) {
+    auto normalizedName = StringUtils::getUpper(name);
+    return ReservedNames::getColumnNames().contains(normalizedName);
 }
 
-void Binder::restoreScope(std::unique_ptr<BinderScope> prevVariableScope) {
-    scope = std::move(prevVariableScope);
+bool Binder::reservedInPropertyLookup(const std::string& name) {
+    auto normalizedName = StringUtils::getUpper(name);
+    return ReservedNames::getPropertyLookupName().contains(normalizedName);
+}
+
+void Binder::addToScope(const std::vector<std::string>& names, const expression_vector& exprs) {
+    KU_ASSERT(names.size() == exprs.size());
+    for (auto i = 0u; i < names.size(); ++i) {
+        addToScope(names[i], exprs[i]);
+    }
+}
+
+void Binder::addToScope(const std::string& name, std::shared_ptr<Expression> expr) {
+    // TODO(Xiyang): assert name not in scope.
+    // Note to Xiyang: I don't think the TODO still stands here. I tried adding the assertion, but
+    // it failed a few tests. You may want to revisit this TODO.
+    scope.addExpression(name, std::move(expr));
+}
+
+BinderScope Binder::saveScope() const {
+    return scope.copy();
+}
+
+void Binder::restoreScope(BinderScope prevScope) {
+    scope = std::move(prevScope);
+}
+
+TableFunction Binder::getScanFunction(const FileTypeInfo& typeInfo,
+    const FileScanInfo& fileScanInfo) const {
+    Function* func = nullptr;
+    std::vector<LogicalType> inputTypes;
+    inputTypes.push_back(LogicalType::STRING());
+    auto catalog = clientContext->getCatalog();
+    auto transaction = clientContext->getTransaction();
+    switch (typeInfo.fileType) {
+    case FileType::PARQUET: {
+        auto entry = catalog->getFunctionEntry(transaction, ParquetScanFunction::name);
+        func = BuiltInFunctionsUtils::matchFunction(ParquetScanFunction::name, inputTypes,
+            entry->ptrCast<FunctionCatalogEntry>());
+    } break;
+    case FileType::NPY: {
+        auto entry = catalog->getFunctionEntry(transaction, NpyScanFunction::name);
+        func = BuiltInFunctionsUtils::matchFunction(NpyScanFunction::name, inputTypes,
+            entry->ptrCast<FunctionCatalogEntry>());
+    } break;
+    case FileType::CSV: {
+        auto csvConfig = CSVReaderConfig::construct(fileScanInfo.options);
+        auto name = csvConfig.parallel ? ParallelCSVScan::name : SerialCSVScan::name;
+        auto entry = catalog->getFunctionEntry(transaction, name);
+        func = BuiltInFunctionsUtils::matchFunction(name, inputTypes,
+            entry->ptrCast<FunctionCatalogEntry>());
+    } break;
+    case FileType::UNKNOWN: {
+        try {
+            auto name = stringFormat("{}_SCAN", typeInfo.fileTypeStr);
+            auto entry = catalog->getFunctionEntry(transaction, name);
+            func = BuiltInFunctionsUtils::matchFunction(name, inputTypes,
+                entry->ptrCast<FunctionCatalogEntry>());
+        } catch (...) {
+            if (typeInfo.fileTypeStr == "") {
+                throw BinderException{"Cannot infer the format of the given file. Please "
+                                      "set the file format explicitly by (file_format=<type>)."};
+            }
+            throw BinderException{
+                stringFormat("Cannot load from file type {}. If this file type is part of a kuzu "
+                             "extension please load the extension then try again.",
+                    typeInfo.fileTypeStr)};
+        }
+    } break;
+    default:
+        KU_UNREACHABLE;
+    }
+    return *func->ptrCast<TableFunction>();
 }
 
 } // namespace binder

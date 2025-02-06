@@ -1,9 +1,11 @@
 #include "processor/operator/ddl/ddl.h"
 
+#include "common/metric.h"
+
 namespace kuzu {
 namespace processor {
 
-void DDL::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) {
+void DDL::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* /*context*/) {
     outputVector = resultSet->getValueVector(outputPos).get();
 }
 
@@ -12,9 +14,9 @@ bool DDL::getNextTuplesInternal(ExecutionContext* context) {
         return false;
     }
     hasExecuted = true;
-    executeDDLInternal();
+    executeDDLInternal(context);
     outputVector->setValue<std::string>(0, getOutputMsg());
-    metrics->numOutputTuple.increase(1);
+    metrics->numOutputTuple.incrementByOne();
     return true;
 }
 

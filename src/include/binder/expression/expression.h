@@ -1,14 +1,16 @@
 #pragma once
 
-#include <cassert>
 #include <functional>
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
 
-#include "common/exception.h"
-#include "common/expression_type.h"
-#include "common/types/types_include.h"
+#include "common/assert.h"
+#include "common/cast.h"
+#include "common/copy_constructors.h"
+#include "common/enums/expression_type.h"
+#include "common/exception/internal.h"
+#include "common/types/types.h"
 
 namespace kuzu {
 namespace binder {
@@ -25,7 +27,7 @@ template<typename T>
 using expression_map =
     std::unordered_map<std::shared_ptr<Expression>, T, ExpressionHasher, ExpressionEquality>;
 
-class Expression : public std::enable_shared_from_this<Expression> {
+class KUZU_API Expression : public std::enable_shared_from_this<Expression> {
     friend class ExpressionChildrenCollector;
 
 public:
@@ -33,61 +35,78 @@ public:
         expression_vector children, std::string uniqueName)
         : expressionType{expressionType}, dataType{std::move(dataType)},
           uniqueName{std::move(uniqueName)}, children{std::move(children)} {}
-
     // Create binary expression.
     Expression(common::ExpressionType expressionType, common::LogicalType dataType,
         const std::shared_ptr<Expression>& left, const std::shared_ptr<Expression>& right,
         std::string uniqueName)
         : Expression{expressionType, std::move(dataType), expression_vector{left, right},
               std::move(uniqueName)} {}
-
     // Create unary expression.
     Expression(common::ExpressionType expressionType, common::LogicalType dataType,
         const std::shared_ptr<Expression>& child, std::string uniqueName)
         : Expression{expressionType, std::move(dataType), expression_vector{child},
               std::move(uniqueName)} {}
-
     // Create leaf expression
-    Expression(
-        common::ExpressionType expressionType, common::LogicalType dataType, std::string uniqueName)
-        : Expression{
-              expressionType, std::move(dataType), expression_vector{}, std::move(uniqueName)} {}
-
+    Expression(common::ExpressionType expressionType, common::LogicalType dataType,
+        std::string uniqueName)
+        : Expression{expressionType, std::move(dataType), expression_vector{},
+              std::move(uniqueName)} {}
+    DELETE_COPY_DEFAULT_MOVE(Expression);
     virtual ~Expression() = default;
 
-public:
-    inline void setAlias(const std::string& name) { alias = name; }
-
-    inline std::string getUniqueName() const {
-        assert(!uniqueName.empty());
+    void setUniqueName(const std::string& name) { uniqueName = name; }
+    std::string getUniqueName() const {
+        KU_ASSERT(!uniqueName.empty());
         return uniqueName;
     }
 
-    inline common::LogicalType getDataType() const { return dataType; }
-    inline common::LogicalType& getDataTypeReference() { return dataType; }
+    virtual void cast(const common::LogicalType& type);
+    const common::LogicalType& getDataType() const { return dataType; }
 
-    inline bool hasAlias() const { return !alias.empty(); }
+    void setAlias(const std::string& newAlias) { alias = newAlias; }
+    bool hasAlias() const { return !alias.empty(); }
+    std::string getAlias() const { return alias; }
 
-    inline std::string getAlias() const { return alias; }
-
-    inline uint32_t getNumChildren() const { return children.size(); }
-
-    inline std::shared_ptr<Expression> getChild(common::vector_idx_t idx) const {
+    common::idx_t getNumChildren() const { return children.size(); }
+    std::shared_ptr<Expression> getChild(common::idx_t idx) const {
+        KU_ASSERT(idx < children.size());
         return children[idx];
     }
-    inline void setChild(common::vector_idx_t idx, std::shared_ptr<Expression> child) {
+    expression_vector getChildren() const { return children; }
+    void setChild(common::idx_t idx, std::shared_ptr<Expression> child) {
+        KU_ASSERT(idx < children.size());
         children[idx] = std::move(child);
     }
 
     expression_vector splitOnAND();
 
-    inline bool operator==(const Expression& rhs) const { return uniqueName == rhs.uniqueName; }
+    bool operator==(const Expression& rhs) const { return uniqueName == rhs.uniqueName; }
 
-    virtual std::string toString() const = 0;
+    std::string toString() const { return hasAlias() ? alias : toStringInternal(); }
 
     virtual std::unique_ptr<Expression> copy() const {
         throw common::InternalException("Unimplemented expression copy().");
     }
+
+    template<class TARGET>
+    TARGET& cast() {
+        return common::ku_dynamic_cast<TARGET&>(*this);
+    }
+    template<class TARGET>
+    TARGET* ptrCast() {
+        return common::ku_dynamic_cast<TARGET*>(this);
+    }
+    template<class TARGET>
+    const TARGET& constCast() const {
+        return common::ku_dynamic_cast<const TARGET&>(*this);
+    }
+    template<class TARGET>
+    const TARGET* constPtrCast() const {
+        return common::ku_dynamic_cast<const TARGET*>(this);
+    }
+
+protected:
+    virtual std::string toStringInternal() const = 0;
 
 public:
     common::ExpressionType expressionType;
@@ -107,34 +126,9 @@ struct ExpressionHasher {
 };
 
 struct ExpressionEquality {
-    bool operator()(
-        const std::shared_ptr<Expression>& left, const std::shared_ptr<Expression>& right) const {
+    bool operator()(const std::shared_ptr<Expression>& left,
+        const std::shared_ptr<Expression>& right) const {
         return left->getUniqueName() == right->getUniqueName();
-    }
-};
-
-struct ExpressionUtil {
-    static bool allExpressionsHaveDataType(
-        expression_vector& expressions, common::LogicalTypeID dataTypeID);
-
-    static uint32_t find(Expression* target, expression_vector expressions);
-
-    static std::string toString(const expression_vector& expressions);
-
-    static expression_vector excludeExpressions(
-        const expression_vector& expressions, const expression_vector& expressionsToExclude);
-
-    inline static bool isNodeVariable(const Expression& expression) {
-        return expression.expressionType == common::ExpressionType::VARIABLE &&
-               expression.dataType.getLogicalTypeID() == common::LogicalTypeID::NODE;
-    }
-    inline static bool isRelVariable(const Expression& expression) {
-        return expression.expressionType == common::ExpressionType::VARIABLE &&
-               expression.dataType.getLogicalTypeID() == common::LogicalTypeID::REL;
-    }
-    inline static bool isRecursiveRelVariable(const Expression& expression) {
-        return expression.expressionType == common::ExpressionType::VARIABLE &&
-               expression.dataType.getLogicalTypeID() == common::LogicalTypeID::RECURSIVE_REL;
     }
 };
 

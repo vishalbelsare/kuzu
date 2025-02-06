@@ -1,31 +1,32 @@
 #pragma once
 
-#include "base_evaluator.h"
-#include "binder/expression/path_expression.h"
+#include "binder/expression/expression.h"
+#include "expression_evaluator.h"
 
 namespace kuzu {
+namespace main {
+class ClientContext;
+}
+
 namespace evaluator {
 
-class PathExpressionEvaluator : public BaseExpressionEvaluator {
+class PathExpressionEvaluator final : public ExpressionEvaluator {
+    static constexpr EvaluatorType type_ = EvaluatorType::PATH;
+
 public:
-    PathExpressionEvaluator(std::shared_ptr<binder::PathExpression> pathExpression,
-        std::vector<std::unique_ptr<BaseExpressionEvaluator>> children)
-        : BaseExpressionEvaluator{std::move(children)}, pathExpression{std::move(pathExpression)} {}
+    PathExpressionEvaluator(std::shared_ptr<binder::Expression> expression,
+        evaluator_vector_t children)
+        : ExpressionEvaluator{type_, std::move(expression), std::move(children)},
+          resultNodesVector(nullptr), resultRelsVector(nullptr) {}
 
-    void init(const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) final;
+    void init(const processor::ResultSet& resultSet, main::ClientContext* clientContext) override;
 
-    void evaluate() final;
+    void evaluate() override;
 
-    bool select(common::SelectionVector& selVector) final {
-        throw common::NotImplementedException("PathExpressionEvaluator::select");
-    }
+    bool selectInternal(common::SelectionVector& /*selVector*/) override { KU_UNREACHABLE; }
 
-    inline std::unique_ptr<BaseExpressionEvaluator> clone() final {
-        std::vector<std::unique_ptr<BaseExpressionEvaluator>> clonedChildren;
-        for (auto& child : children) {
-            clonedChildren.push_back(child->clone());
-        }
-        return make_unique<PathExpressionEvaluator>(pathExpression, std::move(clonedChildren));
+    std::unique_ptr<ExpressionEvaluator> clone() override {
+        return make_unique<PathExpressionEvaluator>(expression, cloneVector(children));
     }
 
 private:
@@ -45,11 +46,11 @@ private:
         std::vector<common::ValueVector*> relFieldVectors;
     };
 
-    void resolveResultVector(
-        const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) final;
+    void resolveResultVector(const processor::ResultSet& resultSet,
+        storage::MemoryManager* memoryManager) override;
 
-    void copyNodes(common::sel_t resultPos);
-    void copyRels(common::sel_t resultPos);
+    void copyNodes(common::sel_t resultPos, bool isEmptyRels);
+    uint64_t copyRels(common::sel_t resultPos);
 
     void copyFieldVectors(common::offset_t inputVectorPos,
         const std::vector<common::ValueVector*>& inputFieldVectors,
@@ -57,7 +58,6 @@ private:
         const std::vector<common::ValueVector*>& resultFieldVectors);
 
 private:
-    std::shared_ptr<binder::PathExpression> pathExpression;
     std::vector<std::unique_ptr<InputVectors>> inputVectorsPerChild;
     common::ValueVector* resultNodesVector; // LIST[NODE]
     common::ValueVector* resultRelsVector;  // LIST[REL]

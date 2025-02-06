@@ -1,7 +1,7 @@
 #pragma once
 
 #include "logical_operator_visitor.h"
-#include "planner/logical_plan/logical_plan.h"
+#include "planner/operator/logical_plan.h"
 
 namespace kuzu {
 namespace optimizer {
@@ -11,7 +11,7 @@ public:
     void rewrite(planner::LogicalPlan* plan);
 
     std::shared_ptr<planner::LogicalOperator> visitOperator(
-        std::shared_ptr<planner::LogicalOperator> op);
+        const std::shared_ptr<planner::LogicalOperator>& op);
 
 private:
     std::shared_ptr<planner::LogicalOperator> visitFlattenReplace(

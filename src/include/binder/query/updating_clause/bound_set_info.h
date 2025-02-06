@@ -1,27 +1,28 @@
 #pragma once
 
-#include "binder/expression/rel_expression.h"
-#include "update_table_type.h"
+#include "binder/expression/expression.h"
+#include "common/enums/table_type.h"
 
 namespace kuzu {
 namespace binder {
 
 struct BoundSetPropertyInfo {
-    UpdateTableType updateTableType;
-    std::shared_ptr<Expression> nodeOrRel;
-    expression_pair setItem;
+    common::TableType tableType;
+    std::shared_ptr<Expression> pattern;
+    std::shared_ptr<Expression> column;
+    std::shared_ptr<Expression> columnData;
+    bool updatePk = false;
 
-    BoundSetPropertyInfo(UpdateTableType updateTableType, std::shared_ptr<Expression> nodeOrRel,
-        expression_pair setItem)
-        : updateTableType{updateTableType}, nodeOrRel{std::move(nodeOrRel)}, setItem{std::move(
-                                                                                 setItem)} {}
+    BoundSetPropertyInfo(common::TableType tableType, std::shared_ptr<Expression> pattern,
+        std::shared_ptr<Expression> column, std::shared_ptr<Expression> columnData)
+        : tableType{tableType}, pattern{std::move(pattern)}, column{std::move(column)},
+          columnData{std::move(columnData)} {}
+    EXPLICIT_COPY_DEFAULT_MOVE(BoundSetPropertyInfo);
+
+private:
     BoundSetPropertyInfo(const BoundSetPropertyInfo& other)
-        : updateTableType{other.updateTableType}, nodeOrRel{other.nodeOrRel}, setItem{
-                                                                                  other.setItem} {}
-
-    inline std::unique_ptr<BoundSetPropertyInfo> copy() const {
-        return std::make_unique<BoundSetPropertyInfo>(*this);
-    }
+        : tableType{other.tableType}, pattern{other.pattern}, column{other.column},
+          columnData{other.columnData}, updatePk{other.updatePk} {}
 };
 
 } // namespace binder

@@ -1,20 +1,71 @@
 #include "binder/query/updating_clause/bound_merge_clause.h"
 
+using namespace kuzu::common;
+
 namespace kuzu {
 namespace binder {
 
-BoundMergeClause::BoundMergeClause(const BoundMergeClause& other)
-    : BoundUpdatingClause{common::ClauseType::MERGE} {
-    queryGraphCollection = other.queryGraphCollection->copy();
-    for (auto& createInfo : other.createInfos) {
-        createInfos.push_back(createInfo->copy());
+bool BoundMergeClause::hasInsertInfo(
+    const std::function<bool(const BoundInsertInfo&)>& check) const {
+    for (auto& info : insertInfos) {
+        if (check(info)) {
+            return true;
+        }
     }
-    for (auto& setPropertyInfo : other.onMatchSetPropertyInfos) {
-        onMatchSetPropertyInfos.push_back(setPropertyInfo->copy());
+    return false;
+}
+
+std::vector<const BoundInsertInfo*> BoundMergeClause::getInsertInfos(
+    const std::function<bool(const BoundInsertInfo&)>& check) const {
+    std::vector<const BoundInsertInfo*> result;
+    for (auto& info : insertInfos) {
+        if (check(info)) {
+            result.push_back(&info);
+        }
     }
-    for (auto& setPropertyInfo : other.onCreateSetPropertyInfos) {
-        onCreateSetPropertyInfos.push_back(setPropertyInfo->copy());
+    return result;
+}
+
+bool BoundMergeClause::hasOnMatchSetInfo(
+    const std::function<bool(const BoundSetPropertyInfo&)>& check) const {
+    for (auto& info : onMatchSetPropertyInfos) {
+        if (check(info)) {
+            return true;
+        }
     }
+    return false;
+}
+
+std::vector<BoundSetPropertyInfo> BoundMergeClause::getOnMatchSetInfos(
+    const std::function<bool(const BoundSetPropertyInfo&)>& check) const {
+    std::vector<BoundSetPropertyInfo> result;
+    for (auto& info : onMatchSetPropertyInfos) {
+        if (check(info)) {
+            result.push_back(info.copy());
+        }
+    }
+    return result;
+}
+
+bool BoundMergeClause::hasOnCreateSetInfo(
+    const std::function<bool(const BoundSetPropertyInfo&)>& check) const {
+    for (auto& info : onCreateSetPropertyInfos) {
+        if (check(info)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<BoundSetPropertyInfo> BoundMergeClause::getOnCreateSetInfos(
+    const std::function<bool(const BoundSetPropertyInfo&)>& check) const {
+    std::vector<BoundSetPropertyInfo> result;
+    for (auto& info : onCreateSetPropertyInfos) {
+        if (check(info)) {
+            result.push_back(info.copy());
+        }
+    }
+    return result;
 }
 
 } // namespace binder

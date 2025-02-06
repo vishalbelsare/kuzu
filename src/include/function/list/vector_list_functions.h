@@ -1,160 +1,212 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "common/vector/value_vector.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-struct VectorListFunction : public VectorFunction {
-    template<typename OPERATION, typename RESULT_TYPE>
-    static scalar_exec_func getBinaryListExecFunc(common::LogicalType rightType) {
-        scalar_exec_func execFunc;
-        switch (rightType.getPhysicalType()) {
-        case common::PhysicalTypeID::BOOL: {
-            execFunc =
-                BinaryExecListStructFunction<common::list_entry_t, uint8_t, RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::INT64: {
-            execFunc =
-                BinaryExecListStructFunction<common::list_entry_t, int64_t, RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::INT32: {
-            execFunc =
-                BinaryExecListStructFunction<common::list_entry_t, int32_t, RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::INT16: {
-            execFunc =
-                BinaryExecListStructFunction<common::list_entry_t, int16_t, RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::DOUBLE: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, double_t, RESULT_TYPE,
-                OPERATION>;
-        } break;
-        case common::PhysicalTypeID::FLOAT: {
-            execFunc =
-                BinaryExecListStructFunction<common::list_entry_t, float_t, RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::STRING: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, common::ku_string_t,
-                RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::INTERVAL: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, common::interval_t,
-                RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::INTERNAL_ID: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, common::internalID_t,
-                RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::VAR_LIST: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, common::list_entry_t,
-                RESULT_TYPE, OPERATION>;
-        } break;
-        case common::PhysicalTypeID::STRUCT: {
-            execFunc = BinaryExecListStructFunction<common::list_entry_t, common::struct_entry_t,
-                RESULT_TYPE, OPERATION>;
-        } break;
-        default: {
-            throw common::NotImplementedException{
-                "VectorListFunctions::getBinaryListOperationDefinition"};
-        }
-        }
-        return execFunc;
-    }
-};
+struct ListCreationFunction {
+    static constexpr const char* name = "LIST_CREATION";
 
-struct ListCreationVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+    static function_set getFunctionSet();
     static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::ValueVector& result);
+        common::ValueVector& result, void* /*dataPtr*/ = nullptr);
 };
 
-struct ListLenVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
+struct ListRangeFunction {
+    static constexpr const char* name = "RANGE";
+
+    static function_set getFunctionSet();
 };
 
-struct ListExtractVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct SizeFunction {
+    static constexpr const char* name = "SIZE";
+
+    static function_set getFunctionSet();
 };
 
-struct ListConcatVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct CardinalityFunction {
+    using alias = SizeFunction;
+
+    static constexpr const char* name = "CARDINALITY";
 };
 
-struct ListAppendVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListExtractFunction {
+    static constexpr const char* name = "LIST_EXTRACT";
+
+    static function_set getFunctionSet();
 };
 
-struct ListPrependVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListElementFunction {
+    using alias = ListExtractFunction;
+
+    static constexpr const char* name = "LIST_ELEMENT";
 };
 
-struct ListPositionVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListConcatFunction {
+    static constexpr const char* name = "LIST_CONCAT";
+
+    static function_set getFunctionSet();
+    static std::unique_ptr<FunctionBindData> bindFunc(const ScalarBindFuncInput& input);
 };
 
-struct ListContainsVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListCatFunction {
+    using alias = ListConcatFunction;
+
+    static constexpr const char* name = "LIST_CAT";
 };
 
-struct ListSliceVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListAppendFunction {
+    static constexpr const char* name = "LIST_APPEND";
+
+    static function_set getFunctionSet();
 };
 
-struct ListSortVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
-    template<typename T>
-    static void getExecFunction(const binder::expression_vector& arguments, scalar_exec_func& func);
+struct ListPrependFunction {
+    static constexpr const char* name = "LIST_PREPEND";
+
+    static function_set getFunctionSet();
 };
 
-struct ListReverseSortVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
-    template<typename T>
-    static void getExecFunction(const binder::expression_vector& arguments, scalar_exec_func& func);
+struct ListPositionFunction {
+    static constexpr const char* name = "LIST_POSITION";
+
+    static function_set getFunctionSet();
 };
 
-struct ListSumVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListIndexOfFunction {
+    using alias = ListPositionFunction;
+
+    static constexpr const char* name = "LIST_INDEXOF";
 };
 
-struct ListDistinctVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListContainsFunction {
+    static constexpr const char* name = "LIST_CONTAINS";
+
+    static function_set getFunctionSet();
 };
 
-struct ListUniqueVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListHasFunction {
+    using alias = ListContainsFunction;
+
+    static constexpr const char* name = "LIST_HAS";
 };
 
-struct ListAnyValueVectorFunction : public VectorListFunction {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ListSliceFunction {
+    static constexpr const char* name = "LIST_SLICE";
+
+    static function_set getFunctionSet();
+};
+
+struct ListSortFunction {
+    static constexpr const char* name = "LIST_SORT";
+
+    static function_set getFunctionSet();
+};
+
+struct ListReverseSortFunction {
+    static constexpr const char* name = "LIST_REVERSE_SORT";
+
+    static function_set getFunctionSet();
+};
+
+struct ListSumFunction {
+    static constexpr const char* name = "LIST_SUM";
+
+    static function_set getFunctionSet();
+};
+
+struct ListProductFunction {
+    static constexpr const char* name = "LIST_PRODUCT";
+
+    static function_set getFunctionSet();
+};
+
+struct ListDistinctFunction {
+    static constexpr const char* name = "LIST_DISTINCT";
+
+    static function_set getFunctionSet();
+};
+
+struct ListUniqueFunction {
+    static constexpr const char* name = "LIST_UNIQUE";
+
+    static function_set getFunctionSet();
+};
+
+struct ListAnyValueFunction {
+    static constexpr const char* name = "LIST_ANY_VALUE";
+
+    static function_set getFunctionSet();
+};
+
+struct ListReverseFunction {
+    static constexpr const char* name = "LIST_REVERSE";
+
+    static function_set getFunctionSet();
+};
+
+struct ListToStringFunction {
+    static constexpr const char* name = "LIST_TO_STRING";
+
+    static function_set getFunctionSet();
+};
+
+struct ListTransformFunction {
+    static constexpr const char* name = "LIST_TRANSFORM";
+
+    static function_set getFunctionSet();
+};
+
+struct ListFilterFunction {
+    static constexpr const char* name = "LIST_FILTER";
+
+    static function_set getFunctionSet();
+};
+
+struct ListReduceFunction {
+    static constexpr const char* name = "LIST_REDUCE";
+
+    static function_set getFunctionSet();
+};
+
+using quantifier_handler = std::function<bool(uint64_t numSelectedValues, uint64_t originalSize)>;
+
+void execQuantifierFunc(quantifier_handler handler,
+    const std::vector<std::shared_ptr<common::ValueVector>>& input, common::ValueVector& result,
+    void* bindData);
+
+std::unique_ptr<FunctionBindData> bindQuantifierFunc(const ScalarBindFuncInput& input);
+
+struct ListAnyFunction {
+    static constexpr const char* name = "ANY";
+
+    static function_set getFunctionSet();
+};
+
+struct ListAllFunction {
+    static constexpr const char* name = "ALL";
+
+    static function_set getFunctionSet();
+};
+
+struct ListNoneFunction {
+    static constexpr const char* name = "None";
+
+    static function_set getFunctionSet();
+};
+
+struct ListSingleFunction {
+    static constexpr const char* name = "Single";
+
+    static function_set getFunctionSet();
+};
+
+struct ListHasAllFunction {
+    static constexpr const char* name = "LIST_HAS_ALL";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

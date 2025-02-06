@@ -26,11 +26,11 @@ public:
         if (targetDstNodes->contains(nodeID)) {
             numVisitedDstNodes++;
         }
-        currentFrontier->addNode(nodeID);
+        currentFrontier->addNodeWithMultiplicity(nodeID, 1);
     }
 
     inline void markVisited(common::nodeID_t boundNodeID, common::nodeID_t nbrNodeID,
-        common::nodeID_t relID, uint64_t multiplicity) final {
+        common::nodeID_t relID, uint64_t /*multiplicity*/) final {
         if (visited.contains(nbrNodeID)) {
             return;
         }
@@ -41,7 +41,7 @@ public:
         if constexpr (TRACK_PATH) {
             nextFrontier->addEdge(boundNodeID, nbrNodeID, relID);
         } else {
-            nextFrontier->addNode(nbrNodeID);
+            nextFrontier->addNodeWithMultiplicity(nbrNodeID, 1);
         }
     }
 
@@ -52,7 +52,7 @@ private:
 
 private:
     uint64_t numVisitedDstNodes;
-    frontier::node_id_set_t visited;
+    common::node_id_set_t visited;
 };
 
 } // namespace processor

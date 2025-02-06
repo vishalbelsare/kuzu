@@ -1,35 +1,35 @@
 #pragma once
 
-#include "base_evaluator.h"
+#include "common/types/value/value.h"
+#include "expression_evaluator.h"
 
 namespace kuzu {
 namespace evaluator {
 
-class LiteralExpressionEvaluator : public BaseExpressionEvaluator {
+class LiteralExpressionEvaluator : public ExpressionEvaluator {
+    static constexpr EvaluatorType type_ = EvaluatorType::LITERAL;
+
 public:
-    LiteralExpressionEvaluator(std::shared_ptr<common::Value> value)
-        : BaseExpressionEvaluator{true /* isResultFlat */}, value{std::move(value)} {}
+    LiteralExpressionEvaluator(std::shared_ptr<binder::Expression> expression, common::Value value)
+        : ExpressionEvaluator{type_, std::move(expression), true /* isResultFlat */},
+          value{std::move(value)} {}
 
-    ~LiteralExpressionEvaluator() = default;
+    void evaluate() override;
 
-    inline void evaluate() override {}
+    bool selectInternal(common::SelectionVector& selVector) override;
 
-    bool select(common::SelectionVector& selVector) override;
-
-    inline std::unique_ptr<BaseExpressionEvaluator> clone() override {
-        return make_unique<LiteralExpressionEvaluator>(value);
+    std::unique_ptr<ExpressionEvaluator> clone() override {
+        return std::make_unique<LiteralExpressionEvaluator>(expression, value);
     }
 
 protected:
-    void resolveResultVector(
-        const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) override;
+    void resolveResultVector(const processor::ResultSet& resultSet,
+        storage::MemoryManager* memoryManager) override;
 
 private:
-    static void copyValueToVector(
-        uint8_t* dstValue, common::ValueVector* dstVector, const common::Value* srcValue);
-
-private:
-    std::shared_ptr<common::Value> value;
+    common::Value value;
+    std::shared_ptr<common::DataChunkState> flatState;
+    std::shared_ptr<common::DataChunkState> unflatState;
 };
 
 } // namespace evaluator

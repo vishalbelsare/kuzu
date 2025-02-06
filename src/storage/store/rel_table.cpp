@@ -1,491 +1,574 @@
 #include "storage/store/rel_table.h"
 
-#include "common/string_utils.h"
-#include "storage/storage_structure/lists/lists_update_iterator.h"
+#include "catalog/catalog_entry/rel_table_catalog_entry.h"
+#include "common/exception/message.h"
+#include "common/exception/runtime.h"
+#include "main/client_context.h"
+#include "storage/local_storage/local_rel_table.h"
+#include "storage/local_storage/local_storage.h"
+#include "storage/local_storage/local_table.h"
+#include "storage/storage_manager.h"
+#include "storage/store/rel_table_data.h"
+#include "transaction/transaction.h"
 
 using namespace kuzu::catalog;
 using namespace kuzu::common;
+using namespace kuzu::transaction;
+using namespace kuzu::evaluator;
 
 namespace kuzu {
 namespace storage {
 
-void ListsUpdateIteratorsForDirection::addListUpdateIteratorForAdjList(
-    std::unique_ptr<ListsUpdateIterator> listsUpdateIterator) {
-    listUpdateIteratorForAdjList = std::move(listsUpdateIterator);
-}
-
-void ListsUpdateIteratorsForDirection::addListUpdateIteratorForPropertyList(
-    property_id_t propertyID, std::unique_ptr<ListsUpdateIterator> listsUpdateIterator) {
-    listUpdateIteratorsForPropertyLists.emplace(propertyID, std::move(listsUpdateIterator));
-}
-
-void ListsUpdateIteratorsForDirection::doneUpdating() {
-    listUpdateIteratorForAdjList->doneUpdating();
-    for (auto& [_, listUpdateIteratorForPropertyList] : listUpdateIteratorsForPropertyLists) {
-        listUpdateIteratorForPropertyList->doneUpdating();
+RelTableScanState::RelTableScanState(MemoryManager& mm, table_id_t tableID,
+    const std::vector<column_id_t>& columnIDs, const std::vector<const Column*>& columns,
+    Column* csrOffsetCol, Column* csrLengthCol, RelDataDirection direction,
+    std::vector<ColumnPredicateSet> columnPredicateSets)
+    : TableScanState{tableID, columnIDs, columns, std::move(columnPredicateSets)},
+      direction{direction}, currBoundNodeIdx{0}, csrOffsetColumn{csrOffsetCol},
+      csrLengthColumn{csrLengthCol}, localTableScanState{nullptr} {
+    nodeGroupScanState = std::make_unique<CSRNodeGroupScanState>(mm, this->columnIDs.size());
+    if (!this->columnPredicateSets.empty()) {
+        // Since we insert a nbr column. We need to pad an empty nbr column predicate set.
+        this->columnPredicateSets.insert(this->columnPredicateSets.begin(), ColumnPredicateSet());
     }
 }
 
-Column* DirectedRelTableData::getPropertyColumn(property_id_t propertyID) {
-    if (propertyColumns.contains(propertyID)) {
-        return propertyColumns.at(propertyID).get();
-    }
-    return nullptr;
-}
-
-Lists* DirectedRelTableData::getPropertyLists(property_id_t propertyID) {
-    if (propertyLists.contains(propertyID)) {
-        return propertyLists.at(propertyID).get();
-    }
-    return nullptr;
-}
-
-void DirectedRelTableData::initializeData(RelTableSchema* tableSchema, WAL* wal) {
-    if (isSingleMultiplicity()) {
-        initializeColumns(tableSchema, wal);
+void RelTableScanState::initState(Transaction* transaction, NodeGroup* nodeGroup) {
+    this->nodeGroup = nodeGroup;
+    initCachedBoundNodeIDSelVector();
+    if (this->nodeGroup) {
+        initStateForCommitted(transaction);
+    } else if (hasUnComittedData()) {
+        initStateForUncommitted();
     } else {
-        initializeLists(tableSchema, wal);
+        source = TableScanSource::NONE;
     }
 }
 
-void DirectedRelTableData::initializeColumns(RelTableSchema* tableSchema, WAL* wal) {
-    adjColumn = ColumnFactory::getColumn(StorageUtils::getAdjColumnStructureIDAndFName(
-                                             wal->getDirectory(), tableSchema->tableID, direction),
-        LogicalType(LogicalTypeID::INTERNAL_ID), &bufferManager, wal);
-    for (auto& property : tableSchema->properties) {
-        propertyColumns[property.propertyID] = ColumnFactory::getColumn(
-            StorageUtils::getRelPropertyColumnStructureIDAndFName(
-                wal->getDirectory(), tableSchema->tableID, direction, property.propertyID),
-            property.dataType, &bufferManager, wal);
-    }
-}
-
-void DirectedRelTableData::initializeLists(RelTableSchema* tableSchema, WAL* wal) {
-    adjLists = std::make_unique<AdjLists>(StorageUtils::getAdjListsStructureIDAndFName(
-                                              wal->getDirectory(), tableSchema->tableID, direction),
-        tableSchema->getNbrTableID(direction), &bufferManager, wal, listsUpdatesStore);
-    for (auto& property : tableSchema->properties) {
-        propertyLists[property.propertyID] = ListsFactory::getLists(
-            StorageUtils::getRelPropertyListsStructureIDAndFName(
-                wal->getDirectory(), tableSchema->tableID, direction, property),
-            property.dataType, adjLists->getHeaders(), &bufferManager, wal, listsUpdatesStore);
-    }
-}
-
-void DirectedRelTableData::resetColumnsAndLists(
-    catalog::RelTableSchema* tableSchema, kuzu::storage::WAL* wal) {
-    if (isSingleMultiplicity()) {
-        adjColumn.reset();
-        for (auto& property : tableSchema->properties) {
-            propertyColumns[property.propertyID].reset();
-        }
+void RelTableScanState::initCachedBoundNodeIDSelVector() {
+    if (nodeIDVector->state->getSelVector().isUnfiltered()) {
+        cachedBoundNodeSelVector.setToUnfiltered();
     } else {
-        adjLists.reset();
-        for (auto& property : tableSchema->properties) {
-            propertyLists[property.propertyID].reset();
-        }
+        cachedBoundNodeSelVector.setToFiltered();
+        memcpy(cachedBoundNodeSelVector.getMutableBuffer().data(),
+            nodeIDVector->state->getSelVectorUnsafe().getMutableBuffer().data(),
+            nodeIDVector->state->getSelVector().getSelSize() * sizeof(sel_t));
     }
+    cachedBoundNodeSelVector.setSelSize(nodeIDVector->state->getSelVector().getSelSize());
 }
 
-void DirectedRelTableData::scanColumns(transaction::Transaction* transaction,
-    RelTableScanState& scanState, common::ValueVector* inNodeIDVector,
-    const std::vector<common::ValueVector*>& outputVectors) {
-    // Note: The scan operator should guarantee that the first property in the output is adj column.
-    adjColumn->read(transaction, inNodeIDVector, outputVectors[0]);
-    if (!NodeIDVector::discardNull(*outputVectors[0])) {
-        return;
-    }
-    fillNbrTableIDs(outputVectors[0]);
-    for (auto i = 0u; i < scanState.propertyIds.size(); i++) {
-        auto propertyId = scanState.propertyIds[i];
-        auto outputVectorId = i + 1;
-        if (propertyId == INVALID_PROPERTY_ID) {
-            outputVectors[outputVectorId]->setAllNull();
-            continue;
-        }
-        auto propertyColumn = getPropertyColumn(propertyId);
-        propertyColumn->read(transaction, inNodeIDVector, outputVectors[outputVectorId]);
-        if (propertyId == RelTableSchema::INTERNAL_REL_ID_PROPERTY_ID) {
-            fillRelTableIDs(outputVectors[outputVectorId]);
-        }
-    }
+bool RelTableScanState::hasUnComittedData() const {
+    return localTableScanState && localTableScanState->localRelTable;
 }
 
-void DirectedRelTableData::scanLists(transaction::Transaction* transaction,
-    RelTableScanState& scanState, ValueVector* inNodeIDVector,
-    const std::vector<common::ValueVector*>& outputVectors) {
-    if (scanState.syncState->isBoundNodeOffsetInValid()) {
-        auto currentIdx = inNodeIDVector->state->selVector->selectedPositions[0];
-        if (inNodeIDVector->isNull(currentIdx)) {
-            outputVectors[0]->state->selVector->selectedSize = 0;
-            return;
-        }
-        auto currentNodeOffset = inNodeIDVector->readNodeOffset(currentIdx);
-        adjLists->initListReadingState(
-            currentNodeOffset, *scanState.listHandles[0], transaction->getType());
-    }
-    adjLists->readValues(transaction, outputVectors[0], *scanState.listHandles[0]);
-    for (auto i = 0u; i < scanState.propertyIds.size(); i++) {
-        auto propertyId = scanState.propertyIds[i];
-        auto outputVectorId = i + 1;
-        if (propertyId == INVALID_PROPERTY_ID) {
-            outputVectors[outputVectorId]->setAllNull();
-            continue;
-        }
-        auto propertyList = getPropertyLists(propertyId);
-        propertyList->readValues(
-            transaction, outputVectors[outputVectorId], *scanState.listHandles[outputVectorId]);
-        propertyList->setDeletedRelsIfNecessary(
-            transaction, *scanState.listHandles[outputVectorId], outputVectors[outputVectorId]);
-    }
+void RelTableScanState::initStateForCommitted(const Transaction* transaction) {
+    source = TableScanSource::COMMITTED;
+    currBoundNodeIdx = 0;
+    nodeGroup->initializeScanState(transaction, *this);
 }
 
-// Fill nbr table IDs for the vector scanned from an adj column.
-void DirectedRelTableData::fillNbrTableIDs(common::ValueVector* vector) const {
-    assert(vector->dataType.getLogicalTypeID() == LogicalTypeID::INTERNAL_ID);
-    auto nodeIDs = (internalID_t*)vector->getData();
-    for (auto i = 0u; i < vector->state->selVector->selectedSize; i++) {
-        auto pos = vector->state->selVector->selectedPositions[i];
-        nodeIDs[pos].tableID = nbrTableID;
-    }
+void RelTableScanState::initStateForUncommitted() {
+    KU_ASSERT(localTableScanState);
+    source = TableScanSource::UNCOMMITTED;
+    currBoundNodeIdx = 0;
+    localTableScanState->localRelTable->initializeScan(*this);
 }
 
-// Fill rel table IDs for the vector scanned from a RelID column.
-void DirectedRelTableData::fillRelTableIDs(common::ValueVector* vector) const {
-    auto internalRelIDs = (internalID_t*)vector->getData();
-    for (auto i = 0u; i < vector->state->selVector->selectedSize; i++) {
-        auto pos = vector->state->selVector->selectedPositions[i];
-        internalRelIDs[pos].tableID = tableID;
-    }
-}
-
-void DirectedRelTableData::insertRel(common::ValueVector* boundVector,
-    common::ValueVector* nbrVector, const std::vector<common::ValueVector*>& relPropertyVectors) {
-    if (!isSingleMultiplicity()) {
-        return;
-    }
-    auto nodeOffset =
-        boundVector->readNodeOffset(boundVector->state->selVector->selectedPositions[0]);
-    // TODO(Guodong): We should pass a write transaction pointer down.
-    if (!adjColumn->isNull(nodeOffset, transaction::Transaction::getDummyWriteTrx().get())) {
-        throw RuntimeException(
-            StringUtils::string_format("Node(nodeOffset: {}, tableID: {}) in RelTable {} cannot "
-                                       "have more than one neighbour in the {} direction.",
-                nodeOffset,
-                boundVector->getValue<nodeID_t>(boundVector->state->selVector->selectedPositions[0])
-                    .tableID,
-                tableID, RelDataDirectionUtils::relDataDirectionToString(direction)));
-    }
-    adjColumn->write(boundVector, nbrVector);
-    for (auto i = 0u; i < relPropertyVectors.size(); i++) {
-        auto propertyColumn = getPropertyColumn(i);
-        propertyColumn->write(boundVector, relPropertyVectors[i]);
-    }
-}
-
-void DirectedRelTableData::deleteRel(ValueVector* boundVector) {
-    if (!isSingleMultiplicity()) {
-        return;
-    }
-    auto nodeOffset =
-        boundVector->readNodeOffset(boundVector->state->selVector->selectedPositions[0]);
-    adjColumn->setNull(nodeOffset);
-    for (auto& [_, propertyColumn] : propertyColumns) {
-        propertyColumn->setNull(nodeOffset);
-    }
-}
-
-void DirectedRelTableData::updateRel(
-    ValueVector* boundVector, property_id_t propertyID, ValueVector* propertyVector) {
-    if (!isSingleMultiplicity()) {
-        return;
-    }
-    propertyColumns.at(propertyID)->write(boundVector, propertyVector);
-}
-
-void DirectedRelTableData::performOpOnListsWithUpdates(
-    const std::function<void(Lists*)>& opOnListsWithUpdates) {
-    for (auto& [boundNodeTableID, listsUpdatePerTable] :
-        listsUpdatesStore->getListsUpdatesPerChunk(direction)) {
-        opOnListsWithUpdates(adjLists.get());
-        for (auto& [propertyID, propertyList] : propertyLists) {
-            opOnListsWithUpdates(propertyList.get());
-        }
-    }
-}
-
-std::unique_ptr<ListsUpdateIteratorsForDirection>
-DirectedRelTableData::getListsUpdateIteratorsForDirection() {
-    std::unique_ptr<ListsUpdateIteratorsForDirection> listsUpdateIteratorsForDirection =
-        std::make_unique<ListsUpdateIteratorsForDirection>();
-    listsUpdateIteratorsForDirection->addListUpdateIteratorForAdjList(
-        ListsUpdateIteratorFactory::getListsUpdateIterator(adjLists.get()));
-    for (auto& [propertyID, propertyList] : propertyLists) {
-        listsUpdateIteratorsForDirection->addListUpdateIteratorForPropertyList(
-            propertyID, ListsUpdateIteratorFactory::getListsUpdateIterator(propertyList.get()));
-    }
-    return listsUpdateIteratorsForDirection;
-}
-
-RelTable::RelTable(
-    const Catalog& catalog, table_id_t tableID, MemoryManager& memoryManager, WAL* wal)
-    : tableID{tableID}, wal{wal} {
-    auto tableSchema = catalog.getReadOnlyVersion()->getRelTableSchema(tableID);
-    listsUpdatesStore = std::make_unique<ListsUpdatesStore>(memoryManager, *tableSchema);
-    fwdRelTableData =
-        std::make_unique<DirectedRelTableData>(tableID, tableSchema->getBoundTableID(FWD),
-            tableSchema->getNbrTableID(FWD), FWD, listsUpdatesStore.get(),
-            *memoryManager.getBufferManager(), tableSchema->isSingleMultiplicityInDirection(FWD));
-    bwdRelTableData =
-        std::make_unique<DirectedRelTableData>(tableID, tableSchema->getBoundTableID(BWD),
-            tableSchema->getNbrTableID(BWD), BWD, listsUpdatesStore.get(),
-            *memoryManager.getBufferManager(), tableSchema->isSingleMultiplicityInDirection(BWD));
-    initializeData(tableSchema);
-}
-
-void RelTable::initializeData(RelTableSchema* tableSchema) {
-    fwdRelTableData->initializeData(tableSchema, wal);
-    bwdRelTableData->initializeData(tableSchema, wal);
-}
-
-std::vector<AdjLists*> RelTable::getAllAdjLists(table_id_t boundTableID) {
-    std::vector<AdjLists*> retVal;
-    if (!fwdRelTableData->isSingleMultiplicity() && fwdRelTableData->isBoundTable(boundTableID)) {
-        retVal.push_back(fwdRelTableData->getAdjLists());
-    }
-    if (!bwdRelTableData->isSingleMultiplicity() && bwdRelTableData->isBoundTable(boundTableID)) {
-        retVal.push_back(bwdRelTableData->getAdjLists());
-    }
-    return retVal;
-}
-
-std::vector<Column*> RelTable::getAllAdjColumns(table_id_t boundTableID) {
-    std::vector<Column*> retVal;
-    if (fwdRelTableData->isSingleMultiplicity() && fwdRelTableData->isBoundTable(boundTableID)) {
-        retVal.push_back(fwdRelTableData->getAdjColumn());
-    }
-    if (bwdRelTableData->isSingleMultiplicity() && bwdRelTableData->isBoundTable(boundTableID)) {
-        retVal.push_back(bwdRelTableData->getAdjColumn());
-    }
-    return retVal;
-}
-
-void RelTable::prepareCommit() {
-    if (listsUpdatesStore->hasUpdates()) {
-        wal->addToUpdatedRelTables(tableID);
-        prepareCommitForDirection(FWD);
-        prepareCommitForDirection(BWD);
-    }
-}
-
-void RelTable::prepareRollback() {
-    if (listsUpdatesStore->hasUpdates()) {
-        wal->addToUpdatedRelTables(tableID);
-    }
-}
-
-void RelTable::checkpointInMemory() {
-    performOpOnListsWithUpdates(
-        std::bind(&Lists::checkpointInMemoryIfNecessary, std::placeholders::_1),
-        std::bind(&RelTable::clearListsUpdatesStore, this));
-}
-
-void RelTable::rollbackInMemory() {
-    performOpOnListsWithUpdates(
-        std::bind(&Lists::rollbackInMemoryIfNecessary, std::placeholders::_1),
-        std::bind(&RelTable::clearListsUpdatesStore, this));
-}
-
-// This function assumes that the order of vectors in relPropertyVectorsPerRelTable as:
-// [relProp1, relProp2, ..., relPropN] and all vectors are flat.
-void RelTable::insertRel(ValueVector* srcNodeIDVector, ValueVector* dstNodeIDVector,
-    const std::vector<ValueVector*>& relPropertyVectors) {
-    assert(srcNodeIDVector->state->isFlat() && dstNodeIDVector->state->isFlat());
-    fwdRelTableData->insertRel(srcNodeIDVector, dstNodeIDVector, relPropertyVectors);
-    bwdRelTableData->insertRel(dstNodeIDVector, srcNodeIDVector, relPropertyVectors);
-    listsUpdatesStore->insertRelIfNecessary(srcNodeIDVector, dstNodeIDVector, relPropertyVectors);
-}
-
-void RelTable::deleteRel(
-    ValueVector* srcNodeIDVector, ValueVector* dstNodeIDVector, ValueVector* relIDVector) {
-    assert(srcNodeIDVector->state->isFlat() && dstNodeIDVector->state->isFlat() &&
-           relIDVector->state->isFlat());
-    fwdRelTableData->deleteRel(srcNodeIDVector);
-    bwdRelTableData->deleteRel(dstNodeIDVector);
-    listsUpdatesStore->deleteRelIfNecessary(srcNodeIDVector, dstNodeIDVector, relIDVector);
-}
-
-void RelTable::updateRel(common::ValueVector* srcNodeIDVector, common::ValueVector* dstNodeIDVector,
-    common::ValueVector* relIDVector, common::ValueVector* propertyVector, uint32_t propertyID) {
-    assert(srcNodeIDVector->state->isFlat() && dstNodeIDVector->state->isFlat() &&
-           relIDVector->state->isFlat() && propertyVector->state->isFlat());
-    auto srcNode = srcNodeIDVector->getValue<nodeID_t>(
-        srcNodeIDVector->state->selVector->selectedPositions[0]);
-    auto dstNode = dstNodeIDVector->getValue<nodeID_t>(
-        dstNodeIDVector->state->selVector->selectedPositions[0]);
-    fwdRelTableData->updateRel(srcNodeIDVector, propertyID, propertyVector);
-    bwdRelTableData->updateRel(dstNodeIDVector, propertyID, propertyVector);
-    auto relID =
-        relIDVector->getValue<relID_t>(relIDVector->state->selVector->selectedPositions[0]);
-    ListsUpdateInfo listsUpdateInfo = ListsUpdateInfo{propertyVector, propertyID, relID.offset,
-        fwdRelTableData->getListOffset(srcNode, relID.offset),
-        bwdRelTableData->getListOffset(dstNode, relID.offset)};
-    listsUpdatesStore->updateRelIfNecessary(srcNodeIDVector, dstNodeIDVector, listsUpdateInfo);
-}
-
-void RelTable::initEmptyRelsForNewNode(nodeID_t& nodeID) {
-    if (fwdRelTableData->isSingleMultiplicity() && fwdRelTableData->isBoundTable(nodeID.tableID)) {
-        fwdRelTableData->getAdjColumn()->setNull(nodeID.offset);
-    }
-    if (bwdRelTableData->isSingleMultiplicity() && bwdRelTableData->isBoundTable(nodeID.tableID)) {
-        bwdRelTableData->getAdjColumn()->setNull(nodeID.offset);
-    }
-    listsUpdatesStore->initNewlyAddedNodes(nodeID);
-}
-
-void RelTable::batchInitEmptyRelsForNewNodes(
-    const RelTableSchema* relTableSchema, uint64_t numNodesInTable) {
-    fwdRelTableData->batchInitEmptyRelsForNewNodes(
-        relTableSchema, numNodesInTable, wal->getDirectory());
-    bwdRelTableData->batchInitEmptyRelsForNewNodes(
-        relTableSchema, numNodesInTable, wal->getDirectory());
-}
-
-void RelTable::addProperty(Property property, RelTableSchema& relTableSchema) {
-    fwdRelTableData->addProperty(property, wal);
-    bwdRelTableData->addProperty(property, wal);
-    listsUpdatesStore->updateSchema(relTableSchema);
-}
-
-void RelTable::updateListOP(
-    ListsUpdateIterator* listsUpdateIterator, offset_t nodeOffset, InMemList& inMemList) {
-    listsUpdateIterator->updateList(nodeOffset, inMemList);
-}
-
-void RelTable::performOpOnListsWithUpdates(const std::function<void(Lists*)>& opOnListsWithUpdates,
-    const std::function<void()>& opIfHasUpdates) {
-    fwdRelTableData->performOpOnListsWithUpdates(opOnListsWithUpdates);
-    bwdRelTableData->performOpOnListsWithUpdates(opOnListsWithUpdates);
-    if (listsUpdatesStore->hasUpdates()) {
-        opIfHasUpdates();
-    }
-}
-
-std::unique_ptr<ListsUpdateIteratorsForDirection> RelTable::getListsUpdateIteratorsForDirection(
-    RelDataDirection relDirection) const {
-    return relDirection == FWD ? fwdRelTableData->getListsUpdateIteratorsForDirection() :
-                                 bwdRelTableData->getListsUpdateIteratorsForDirection();
-}
-
-void DirectedRelTableData::removeProperty(property_id_t propertyID) {
-    for (auto& [propertyID_, propertyColumn] : propertyColumns) {
-        if (propertyID_ == propertyID) {
-            propertyColumns.erase(propertyID_);
-            break;
-        }
-    }
-
-    for (auto& [propertyID_, propertyList] : propertyLists) {
-        if (propertyID_ == propertyID) {
-            propertyLists.erase(propertyID_);
-            break;
-        }
-    }
-}
-
-void DirectedRelTableData::addProperty(Property& property, WAL* wal) {
-    if (isSingleMultiplicity()) {
-        propertyColumns.emplace(property.propertyID,
-            ColumnFactory::getColumn(
-                StorageUtils::getRelPropertyColumnStructureIDAndFName(
-                    wal->getDirectory(), tableID, direction, property.propertyID),
-                property.dataType, &bufferManager, wal));
-    } else {
-        propertyLists.emplace(property.propertyID,
-            ListsFactory::getLists(StorageUtils::getRelPropertyListsStructureIDAndFName(
-                                       wal->getDirectory(), tableID, direction, property),
-                property.dataType, adjLists->getHeaders(), &bufferManager, wal, listsUpdatesStore));
-    }
-}
-
-void DirectedRelTableData::batchInitEmptyRelsForNewNodes(
-    const RelTableSchema* relTableSchema, uint64_t numNodesInTable, const std::string& directory) {
-    if (!isSingleMultiplicity()) {
-        StorageUtils::initializeListsHeaders(relTableSchema, numNodesInTable, directory, direction);
-    }
-}
-
-void RelTable::prepareCommitForDirection(RelDataDirection relDirection) {
-    auto& listsUpdatesPerChunk = listsUpdatesStore->getListsUpdatesPerChunk(relDirection);
-    if (isSingleMultiplicityInDirection(relDirection) || listsUpdatesPerChunk.empty()) {
-        return;
-    }
-    auto listsUpdateIteratorsForDirection = getListsUpdateIteratorsForDirection(relDirection);
-    // Note: call writeInMemListToListPages in ascending order of nodeOffsets is critical here.
-    for (auto& [chunkIdx, listsUpdatesPerNode] : listsUpdatesPerChunk) {
-        for (auto& [nodeOffset, listsUpdatesForNodeOffset] : listsUpdatesPerNode) {
-            // Note: An empty listUpdates can exist for a nodeOffset, because we don't fix the
-            // listUpdates, listUpdatesPerNode and ListUpdatesPerChunk indices after we insert
-            // or delete a rel. For example: a user inserts 1 rel to nodeOffset1, and then
-            // deletes that rel. We will end up getting an empty listsUpdates for nodeOffset1.
-            if (!listsUpdatesForNodeOffset->hasUpdates()) {
+bool RelTableScanState::scanNext(Transaction* transaction) {
+    while (true) {
+        switch (source) {
+        case TableScanSource::COMMITTED: {
+            const auto scanResult = nodeGroup->scan(transaction, *this);
+            if (scanResult == NODE_GROUP_SCAN_EMMPTY_RESULT) {
+                if (hasUnComittedData()) {
+                    initStateForUncommitted();
+                } else {
+                    source = TableScanSource::NONE;
+                }
                 continue;
             }
-            auto adjLists = getAdjLists(relDirection);
-            if (listsUpdatesForNodeOffset->isNewlyAddedNode) {
-                prepareCommitForListWithUpdateStoreDataOnly(adjLists, nodeOffset,
-                    listsUpdatesForNodeOffset.get(), relDirection,
-                    listsUpdateIteratorsForDirection.get(), updateListOP);
-            } else {
-                prepareCommitForList(adjLists, nodeOffset, listsUpdatesForNodeOffset.get(),
-                    relDirection, listsUpdateIteratorsForDirection.get());
+            return true;
+        }
+        case TableScanSource::UNCOMMITTED: {
+            KU_ASSERT(localTableScanState && localTableScanState->localRelTable);
+            return localTableScanState->localRelTable->scan(transaction, *this);
+        }
+        case TableScanSource::NONE: {
+            return false;
+        }
+        default: {
+            KU_UNREACHABLE;
+        }
+        }
+    }
+}
+
+void RelTableScanState::setNodeIDVectorToFlat(sel_t selPos) const {
+    nodeIDVector->state->setToFlat();
+    nodeIDVector->state->getSelVectorUnsafe().setToFiltered(1);
+    nodeIDVector->state->getSelVectorUnsafe()[0] = selPos;
+}
+
+RelTable::RelTable(RelTableCatalogEntry* relTableEntry, const StorageManager* storageManager,
+    MemoryManager* memoryManager, Deserializer* deSer)
+    : Table{relTableEntry, storageManager, memoryManager},
+      fromNodeTableID{relTableEntry->getSrcTableID()},
+      toNodeTableID{relTableEntry->getDstTableID()}, nextRelOffset{0} {
+    for (auto direction : relTableEntry->getRelDataDirections()) {
+        directedRelData.emplace_back(std::make_unique<RelTableData>(dataFH, memoryManager,
+            shadowFile, relTableEntry, direction, enableCompression, deSer));
+    }
+}
+
+std::unique_ptr<RelTable> RelTable::loadTable(Deserializer& deSer, const Catalog& catalog,
+    StorageManager* storageManager, MemoryManager* memoryManager, VirtualFileSystem*,
+    main::ClientContext*) {
+    std::string key;
+    table_id_t tableID = INVALID_TABLE_ID;
+    offset_t nextRelOffset = INVALID_OFFSET;
+    deSer.validateDebuggingInfo(key, "table_id");
+    deSer.deserializeValue<table_id_t>(tableID);
+    deSer.validateDebuggingInfo(key, "next_rel_offset");
+    deSer.deserializeValue<offset_t>(nextRelOffset);
+    const auto catalogEntry = catalog.getTableCatalogEntry(&DUMMY_TRANSACTION, tableID);
+    if (!catalogEntry) {
+        throw RuntimeException(
+            stringFormat("Load table failed: table {} doesn't exist in catalog.", tableID));
+    }
+    auto relTable = std::make_unique<RelTable>(catalogEntry->ptrCast<RelTableCatalogEntry>(),
+        storageManager, memoryManager, &deSer);
+    relTable->nextRelOffset = nextRelOffset;
+    return relTable;
+}
+
+void RelTable::initScanState(Transaction* transaction, TableScanState& scanState) const {
+    auto& relScanState = scanState.cast<RelTableScanState>();
+    // Note there we directly read node at pos 0 here regardless the selVector is filtered or not.
+    // This is because we're assuming the nodeIDVector is always a sequence here.
+    const auto boundNodeID = relScanState.nodeIDVector->getValue<nodeID_t>(
+        relScanState.nodeIDVector->state->getSelVector()[0]);
+    NodeGroup* nodeGroup = nullptr;
+    if (!transaction->isUnCommitted(boundNodeID.tableID, boundNodeID.offset)) {
+        // Check if the node group idx is same as previous scan.
+        const auto nodeGroupIdx = StorageUtils::getNodeGroupIdx(boundNodeID.offset);
+        if (relScanState.nodeGroupIdx != nodeGroupIdx) {
+            // We need to re-initialize the node group scan state.
+            nodeGroup = getDirectedTableData(relScanState.direction)->getNodeGroup(nodeGroupIdx);
+        } else {
+            nodeGroup = relScanState.nodeGroup;
+        }
+    }
+    scanState.initState(transaction, nodeGroup);
+}
+
+bool RelTable::scanInternal(Transaction* transaction, TableScanState& scanState) {
+    return scanState.scanNext(transaction);
+}
+
+static void throwRelMultiplicityConstraintError(const std::string& tableName, offset_t nodeOffset,
+    RelDataDirection direction) {
+    throw RuntimeException(ExceptionMessage::violateRelMultiplicityConstraint(tableName,
+        std::to_string(nodeOffset), RelDirectionUtils::relDirectionToString(direction)));
+}
+
+void RelTable::checkRelMultiplicityConstraint(Transaction* transaction,
+    const TableInsertState& state) const {
+    const auto& insertState = state.constCast<RelTableInsertState>();
+    KU_ASSERT(insertState.srcNodeIDVector.state->getSelVector().getSelSize() == 1 &&
+              insertState.dstNodeIDVector.state->getSelVector().getSelSize() == 1);
+
+    for (auto& relData : directedRelData) {
+        if (relData->getMultiplicity() == RelMultiplicity::ONE) {
+            throwIfNodeHasRels(transaction, relData->getDirection(),
+                &insertState.getBoundNodeIDVector(relData->getDirection()),
+                throwRelMultiplicityConstraintError);
+        }
+    }
+}
+
+void RelTable::insert(Transaction* transaction, TableInsertState& insertState) {
+    checkRelMultiplicityConstraint(transaction, insertState);
+
+    KU_ASSERT(transaction->getLocalStorage());
+    const auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+        LocalStorage::NotExistAction::CREATE);
+    localTable->insert(transaction, insertState);
+    if (transaction->shouldLogToWAL()) {
+        KU_ASSERT(transaction->isWriteTransaction());
+        KU_ASSERT(transaction->getClientContext());
+        auto& wal = transaction->getClientContext()->getStorageManager()->getWAL();
+        const auto& relInsertState = insertState.cast<RelTableInsertState>();
+        std::vector<ValueVector*> vectorsToLog;
+        vectorsToLog.push_back(&relInsertState.srcNodeIDVector);
+        vectorsToLog.push_back(&relInsertState.dstNodeIDVector);
+        vectorsToLog.insert(vectorsToLog.end(), relInsertState.propertyVectors.begin(),
+            relInsertState.propertyVectors.end());
+        KU_ASSERT(relInsertState.srcNodeIDVector.state->getSelVector().getSelSize() == 1);
+        wal.logTableInsertion(tableID, TableType::REL,
+            relInsertState.srcNodeIDVector.state->getSelVector().getSelSize(), vectorsToLog);
+    }
+    hasChanges = true;
+}
+
+void RelTable::update(Transaction* transaction, TableUpdateState& updateState) {
+    const auto& relUpdateState = updateState.cast<RelTableUpdateState>();
+    KU_ASSERT(relUpdateState.relIDVector.state->getSelVector().getSelSize() == 1);
+    const auto relIDPos = relUpdateState.relIDVector.state->getSelVector()[0];
+    if (const auto relOffset = relUpdateState.relIDVector.readNodeOffset(relIDPos);
+        relOffset >= StorageConstants::MAX_NUM_ROWS_IN_TABLE) {
+        const auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+            LocalStorage::NotExistAction::RETURN_NULL);
+        KU_ASSERT(localTable);
+        auto dummyTrx = Transaction::getDummyTransactionFromExistingOne(*transaction);
+        localTable->update(&dummyTrx, updateState);
+    } else {
+        for (auto& relData : directedRelData) {
+            relData->update(transaction,
+                relUpdateState.getBoundNodeIDVector(relData->getDirection()),
+                relUpdateState.relIDVector, relUpdateState.columnID, relUpdateState.propertyVector);
+        }
+    }
+    if (transaction->shouldLogToWAL()) {
+        KU_ASSERT(transaction->isWriteTransaction());
+        KU_ASSERT(transaction->getClientContext());
+        auto& wal = transaction->getClientContext()->getStorageManager()->getWAL();
+        wal.logRelUpdate(tableID, relUpdateState.columnID, &relUpdateState.srcNodeIDVector,
+            &relUpdateState.dstNodeIDVector, &relUpdateState.relIDVector,
+            &relUpdateState.propertyVector);
+    }
+    hasChanges = true;
+}
+
+bool RelTable::delete_(Transaction* transaction, TableDeleteState& deleteState) {
+    const auto& relDeleteState = deleteState.cast<RelTableDeleteState>();
+    KU_ASSERT(relDeleteState.relIDVector.state->getSelVector().getSelSize() == 1);
+    const auto relIDPos = relDeleteState.relIDVector.state->getSelVector()[0];
+    bool isDeleted = false;
+    if (const auto relOffset = relDeleteState.relIDVector.readNodeOffset(relIDPos);
+        relOffset >= StorageConstants::MAX_NUM_ROWS_IN_TABLE) {
+        const auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+            LocalStorage::NotExistAction::RETURN_NULL);
+        KU_ASSERT(localTable);
+        isDeleted = localTable->delete_(transaction, deleteState);
+    } else {
+        for (auto& relData : directedRelData) {
+            isDeleted = relData->delete_(transaction,
+                relDeleteState.getBoundNodeIDVector(relData->getDirection()),
+                relDeleteState.relIDVector);
+            if (!isDeleted) {
+                break;
             }
         }
     }
-    listsUpdateIteratorsForDirection->doneUpdating();
+    if (isDeleted) {
+        hasChanges = true;
+        if (transaction->shouldLogToWAL()) {
+            KU_ASSERT(transaction->isWriteTransaction());
+            KU_ASSERT(transaction->getClientContext());
+            auto& wal = transaction->getClientContext()->getStorageManager()->getWAL();
+            wal.logRelDelete(tableID, &relDeleteState.srcNodeIDVector,
+                &relDeleteState.dstNodeIDVector, &relDeleteState.relIDVector);
+        }
+    }
+    return isDeleted;
 }
 
-void RelTable::prepareCommitForListWithUpdateStoreDataOnly(AdjLists* adjLists, offset_t nodeOffset,
-    ListsUpdatesForNodeOffset* listsUpdatesForNodeOffset, RelDataDirection relDirection,
-    ListsUpdateIteratorsForDirection* listsUpdateIteratorsForDirection,
-    const std::function<void(ListsUpdateIterator* listsUpdateIterator, offset_t,
-        InMemList& inMemList)>& opOnListsUpdateIterators) {
-    auto inMemAdjLists = adjLists->createInMemListWithDataFromUpdateStoreOnly(
-        nodeOffset, listsUpdatesForNodeOffset->insertedRelsTupleIdxInFT);
-    opOnListsUpdateIterators(listsUpdateIteratorsForDirection->getListUpdateIteratorForAdjList(),
-        nodeOffset, *inMemAdjLists);
-    for (auto& [propertyID, listUpdateIteratorForPropertyList] :
-        listsUpdateIteratorsForDirection->getListsUpdateIteratorsForPropertyLists()) {
-        auto inMemPropLists = getPropertyLists(relDirection, propertyID)
-                                  ->createInMemListWithDataFromUpdateStoreOnly(nodeOffset,
-                                      listsUpdatesForNodeOffset->insertedRelsTupleIdxInFT);
-        opOnListsUpdateIterators(
-            listUpdateIteratorForPropertyList.get(), nodeOffset, *inMemPropLists);
+void RelTable::detachDelete(Transaction* transaction, RelDataDirection direction,
+    RelTableDeleteState* deleteState) {
+    // TODO(Royi) we currently do not support detached deleting from single-direction rel tables
+    KU_ASSERT(directedRelData.size() == NUM_REL_DIRECTIONS);
+
+    KU_ASSERT(deleteState->srcNodeIDVector.state->getSelVector().getSelSize() == 1);
+    const auto tableData = getDirectedTableData(direction);
+    const auto reverseTableData =
+        getDirectedTableData(RelDirectionUtils::getOppositeDirection(direction));
+    std::vector<column_id_t> columnsToScan = {NBR_ID_COLUMN_ID, REL_ID_COLUMN_ID};
+    const auto relReadState =
+        std::make_unique<RelTableScanState>(*transaction->getClientContext()->getMemoryManager(),
+            tableID, columnsToScan, tableData->getColumns(), tableData->getCSROffsetColumn(),
+            tableData->getCSRLengthColumn(), direction);
+    relReadState->nodeIDVector = &deleteState->srcNodeIDVector;
+    relReadState->outputVectors =
+        std::vector<ValueVector*>{&deleteState->dstNodeIDVector, &deleteState->relIDVector};
+    relReadState->outState = relReadState->outputVectors[0]->state.get();
+    relReadState->rowIdxVector->state = relReadState->outputVectors[0]->state;
+    if (const auto localRelTable = transaction->getLocalStorage()->getLocalTable(tableID,
+            LocalStorage::NotExistAction::RETURN_NULL)) {
+        auto localTableColumnIDs =
+            LocalRelTable::rewriteLocalColumnIDs(direction, relReadState->columnIDs);
+        relReadState->localTableScanState = std::make_unique<LocalRelTableScanState>(*relReadState,
+            localTableColumnIDs, localRelTable->ptrCast<LocalRelTable>());
+        relReadState->localTableScanState->rowIdxVector->state = relReadState->rowIdxVector->state;
+    }
+    initScanState(transaction, *relReadState);
+    detachDeleteForCSRRels(transaction, tableData, reverseTableData, relReadState.get(),
+        deleteState);
+    if (transaction->shouldLogToWAL()) {
+        KU_ASSERT(transaction->isWriteTransaction());
+        KU_ASSERT(transaction->getClientContext());
+        auto& wal = transaction->getClientContext()->getStorageManager()->getWAL();
+        wal.logRelDetachDelete(tableID, direction, &deleteState->srcNodeIDVector);
+    }
+    hasChanges = true;
+}
+
+std::vector<RelDataDirection> RelTable::getStorageDirections() const {
+    std::vector<RelDataDirection> ret;
+    for (const auto& relData : directedRelData) {
+        ret.push_back(relData->getDirection());
+    }
+    return ret;
+}
+
+bool RelTable::checkIfNodeHasRels(Transaction* transaction, RelDataDirection direction,
+    ValueVector* srcNodeIDVector) const {
+    bool hasRels = false;
+    const auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+        LocalStorage::NotExistAction::RETURN_NULL);
+    if (localTable) {
+        hasRels = localTable->cast<LocalRelTable>().checkIfNodeHasRels(srcNodeIDVector, direction);
+    }
+    hasRels = hasRels ||
+              (getDirectedTableData(direction)->checkIfNodeHasRels(transaction, srcNodeIDVector));
+    return hasRels;
+}
+
+void RelTable::throwIfNodeHasRels(Transaction* transaction, RelDataDirection direction,
+    ValueVector* srcNodeIDVector, const rel_multiplicity_constraint_throw_func_t& throwFunc) const {
+    const auto nodeIDPos = srcNodeIDVector->state->getSelVector()[0];
+    const auto nodeOffset = srcNodeIDVector->getValue<nodeID_t>(nodeIDPos).offset;
+    if (checkIfNodeHasRels(transaction, direction, srcNodeIDVector)) {
+        throwFunc(tableName, nodeOffset, direction);
     }
 }
 
-void RelTable::prepareCommitForList(AdjLists* adjLists, offset_t nodeOffset,
-    ListsUpdatesForNodeOffset* listsUpdatesForNodeOffset, RelDataDirection relDirection,
-    ListsUpdateIteratorsForDirection* listsUpdateIteratorsForDirection) {
-    auto relIDLists =
-        (RelIDList*)getPropertyLists(relDirection, RelTableSchema::INTERNAL_REL_ID_PROPERTY_ID);
-    auto deletedRelOffsets = relIDLists->getDeletedRelOffsetsInListForNodeOffset(nodeOffset);
-    // Note: updating adjList is not supported, thus updatedPersistentListOffsets
-    // for adjList should be empty.
-    auto inMemAdjLists =
-        adjLists->writeToInMemList(nodeOffset, listsUpdatesForNodeOffset->insertedRelsTupleIdxInFT,
-            deletedRelOffsets, nullptr /* updatedPersistentListOffsets */);
-    listsUpdateIteratorsForDirection->getListUpdateIteratorForAdjList()->updateList(
-        nodeOffset, *inMemAdjLists);
-    for (auto& [propertyID, listUpdateIteratorForPropertyList] :
-        listsUpdateIteratorsForDirection->getListsUpdateIteratorsForPropertyLists()) {
-        auto inMemPropLists =
-            getPropertyLists(relDirection, propertyID)
-                ->writeToInMemList(nodeOffset, listsUpdatesForNodeOffset->insertedRelsTupleIdxInFT,
-                    deletedRelOffsets,
-                    &listsUpdatesForNodeOffset->updatedPersistentListOffsets.at(propertyID));
-        listUpdateIteratorForPropertyList->updateList(nodeOffset, *inMemPropLists);
+void RelTable::detachDeleteForCSRRels(Transaction* transaction, RelTableData* tableData,
+    RelTableData* reverseTableData, RelTableScanState* relDataReadState,
+    RelTableDeleteState* deleteState) {
+    const auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+        LocalStorage::NotExistAction::RETURN_NULL);
+    const auto tempState = deleteState->dstNodeIDVector.state.get();
+    while (scan(transaction, *relDataReadState)) {
+        const auto numRelsScanned = tempState->getSelVector().getSelSize();
+        tempState->getSelVectorUnsafe().setToFiltered(1);
+        for (auto i = 0u; i < numRelsScanned; i++) {
+            tempState->getSelVectorUnsafe()[0] = i;
+            const auto relIDPos = deleteState->relIDVector.state->getSelVector()[0];
+            const auto relOffset = deleteState->relIDVector.readNodeOffset(relIDPos);
+            if (relOffset >= StorageConstants::MAX_NUM_ROWS_IN_TABLE) {
+                KU_ASSERT(localTable);
+                localTable->delete_(transaction, *deleteState);
+                continue;
+            }
+            const auto deleted = tableData->delete_(transaction, deleteState->srcNodeIDVector,
+                deleteState->relIDVector);
+            const auto reverseDeleted = reverseTableData->delete_(transaction,
+                deleteState->dstNodeIDVector, deleteState->relIDVector);
+            KU_ASSERT(deleted == reverseDeleted);
+            KU_UNUSED(deleted);
+            KU_UNUSED(reverseDeleted);
+        }
+        tempState->getSelVectorUnsafe().setToUnfiltered();
     }
+}
+
+void RelTable::addColumn(Transaction* transaction, TableAddColumnState& addColumnState) {
+    LocalTable* localTable = nullptr;
+    if (transaction->getLocalStorage()) {
+        localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+            LocalStorage::NotExistAction::RETURN_NULL);
+    }
+    if (localTable) {
+        localTable->addColumn(transaction, addColumnState);
+    }
+    for (auto& directedRelData : directedRelData) {
+        directedRelData->addColumn(transaction, addColumnState);
+    }
+    hasChanges = true;
+}
+
+RelTableData* RelTable::getDirectedTableData(RelDataDirection direction) const {
+    const auto directionIdx = RelDirectionUtils::relDirectionToKeyIdx(direction);
+    if (directionIdx >= directedRelData.size()) {
+        throw RuntimeException(stringFormat(
+            "Failed to get {} data for rel table \"{}\", please set the storage direction to BOTH",
+            RelDirectionUtils::relDirectionToString(direction), tableName));
+    }
+    KU_ASSERT(directedRelData[directionIdx]->getDirection() == direction);
+    return directedRelData[directionIdx].get();
+}
+
+NodeGroup* RelTable::getOrCreateNodeGroup(const Transaction* transaction,
+    node_group_idx_t nodeGroupIdx, RelDataDirection direction) const {
+    return getDirectedTableData(direction)->getOrCreateNodeGroup(transaction, nodeGroupIdx);
+}
+
+void RelTable::pushInsertInfo(const Transaction* transaction, RelDataDirection direction,
+    const CSRNodeGroup& nodeGroup, row_idx_t numRows_, CSRNodeGroupScanSource source) const {
+    getDirectedTableData(direction)->pushInsertInfo(transaction, nodeGroup, numRows_, source);
+}
+
+void RelTable::commit(Transaction* transaction, TableCatalogEntry* tableEntry,
+    LocalTable* localTable) {
+    auto& localRelTable = localTable->cast<LocalRelTable>();
+    if (localRelTable.isEmpty()) {
+        localTable->clear();
+        return;
+    }
+    // Update relID in local storage.
+    updateRelOffsets(localRelTable);
+    updateNodeOffsets(transaction, localRelTable);
+    // For both forward and backward directions, re-org local storage into compact CSR node groups.
+    auto& localNodeGroup = localRelTable.getLocalNodeGroup();
+    // Scan from local node group and write to WAL.
+    std::vector<column_id_t> columnIDsToScan;
+    for (auto i = 0u; i < localRelTable.getNumColumns(); i++) {
+        columnIDsToScan.push_back(i);
+    }
+
+    std::vector<column_id_t> columnIDsToCommit;
+    columnIDsToCommit.push_back(0); // NBR column.
+    for (auto& property : tableEntry->getProperties()) {
+        auto columnID = tableEntry->getColumnID(property.getName());
+        columnIDsToCommit.push_back(columnID);
+    }
+    // commit rel table data
+    for (auto& relData : directedRelData) {
+        const auto direction = relData->getDirection();
+        const auto columnToSkip = (direction == RelDataDirection::FWD) ?
+                                      LOCAL_BOUND_NODE_ID_COLUMN_ID :
+                                      LOCAL_NBR_NODE_ID_COLUMN_ID;
+        for (auto& [boundNodeOffset, rowIndices] : localRelTable.getCSRIndex(direction)) {
+            auto [nodeGroupIdx, boundOffsetInGroup] = StorageUtils::getQuotientRemainder(
+                boundNodeOffset, StorageConstants::NODE_GROUP_SIZE);
+            auto& nodeGroup =
+                relData->getOrCreateNodeGroup(transaction, nodeGroupIdx)->cast<CSRNodeGroup>();
+            pushInsertInfo(transaction, direction, nodeGroup, rowIndices.size(),
+                CSRNodeGroupScanSource::COMMITTED_IN_MEMORY);
+            prepareCommitForNodeGroup(transaction, columnIDsToCommit, localNodeGroup, nodeGroup,
+                boundOffsetInGroup, rowIndices, columnToSkip);
+        }
+    }
+
+    localRelTable.clear();
+}
+
+void RelTable::updateRelOffsets(const LocalRelTable& localRelTable) {
+    auto& localNodeGroup = localRelTable.getLocalNodeGroup();
+    for (auto i = 0u; i < localNodeGroup.getNumChunkedGroups(); i++) {
+        const auto chunkedGroup = localNodeGroup.getChunkedNodeGroup(i);
+        KU_ASSERT(chunkedGroup);
+        auto& internalIDData = chunkedGroup->getColumnChunk(LOCAL_REL_ID_COLUMN_ID)
+                                   .getData()
+                                   .cast<InternalIDChunkData>();
+        const offset_t maxCommittedOffset = reserveRelOffsets(internalIDData.getNumValues());
+        for (auto rowIdx = 0u; rowIdx < internalIDData.getNumValues(); rowIdx++) {
+            const auto localRelOffset = internalIDData[rowIdx];
+            const auto committedRelOffset = getCommittedOffset(localRelOffset, maxCommittedOffset);
+            internalIDData[rowIdx] = committedRelOffset;
+            internalIDData.setTableID(tableID);
+        }
+    }
+}
+
+static void updateIndexNodeOffsets(const Transaction* transaction,
+    DirectedCSRIndex::index_t& localRelIndex, table_id_t nodeTableID) {
+    for (auto& [offset, rowIndices] : localRelIndex) {
+        if (transaction->isUnCommitted(nodeTableID, offset)) {
+            const auto committedOffset =
+                transaction->getCommittedOffsetFromUncommitted(nodeTableID, offset);
+            auto kvPair = localRelIndex.extract(offset);
+            kvPair.key() = committedOffset;
+            localRelIndex.insert(std::move(kvPair));
+        }
+    }
+}
+
+void RelTable::updateNodeOffsets(const Transaction* transaction,
+    LocalRelTable& localRelTable) const {
+    std::unordered_map<column_id_t, table_id_t> columnsToUpdate;
+    if (transaction->hasNewlyInsertedNodes(fromNodeTableID)) {
+        columnsToUpdate[LOCAL_BOUND_NODE_ID_COLUMN_ID] = fromNodeTableID;
+        updateIndexNodeOffsets(transaction, localRelTable.getCSRIndex(RelDataDirection::FWD),
+            fromNodeTableID);
+    }
+    if (transaction->hasNewlyInsertedNodes(toNodeTableID)) {
+        columnsToUpdate[LOCAL_NBR_NODE_ID_COLUMN_ID] = toNodeTableID;
+        updateIndexNodeOffsets(transaction, localRelTable.getCSRIndex(RelDataDirection::FWD),
+            toNodeTableID);
+    }
+    auto& localNodeGroup = localRelTable.getLocalNodeGroup();
+    for (auto i = 0u; i < localNodeGroup.getNumChunkedGroups(); i++) {
+        const auto chunkedGroup = localNodeGroup.getChunkedNodeGroup(i);
+        KU_ASSERT(chunkedGroup);
+        for (auto& [columnID, maxCommittedOffset] : columnsToUpdate) {
+            auto& nodeIDData =
+                chunkedGroup->getColumnChunk(columnID).getData().cast<InternalIDChunkData>();
+            for (auto rowIdx = 0u; rowIdx < nodeIDData.getNumValues(); rowIdx++) {
+                const auto localOffset = nodeIDData[rowIdx];
+                if (transaction->isUnCommitted(columnsToUpdate.at(columnID), localOffset)) {
+                    const auto committedOffset = transaction->getCommittedOffsetFromUncommitted(
+                        columnsToUpdate.at(columnID), localOffset);
+                    nodeIDData[rowIdx] = committedOffset;
+                }
+            }
+        }
+    }
+}
+
+offset_t RelTable::getCommittedOffset(offset_t uncommittedOffset, offset_t maxCommittedOffset) {
+    return uncommittedOffset - StorageConstants::MAX_NUM_ROWS_IN_TABLE + maxCommittedOffset;
+}
+
+void RelTable::prepareCommitForNodeGroup(const Transaction* transaction,
+    const std::vector<column_id_t>& columnIDs, const NodeGroup& localNodeGroup,
+    CSRNodeGroup& csrNodeGroup, offset_t boundOffsetInGroup, const row_idx_vec_t& rowIndices,
+    column_id_t skippedColumn) {
+    for (const auto row : rowIndices) {
+        auto [chunkedGroupIdx, rowInChunkedGroup] =
+            StorageUtils::getQuotientRemainder(row, ChunkedNodeGroup::CHUNK_CAPACITY);
+        std::vector<ColumnChunk*> chunks;
+        const auto chunkedGroup = localNodeGroup.getChunkedNodeGroup(chunkedGroupIdx);
+        for (auto i = 0u; i < chunkedGroup->getNumColumns(); i++) {
+            if (i == skippedColumn) {
+                continue;
+            }
+            chunks.push_back(&chunkedGroup->getColumnChunk(i));
+        }
+        csrNodeGroup.append(transaction, columnIDs, boundOffsetInGroup, chunks, rowInChunkedGroup,
+            1 /*numRows*/);
+    }
+}
+
+void RelTable::checkpoint(Serializer& ser, TableCatalogEntry* tableEntry) {
+    if (hasChanges) {
+        // Deleted columns are vaccumed and not checkpointed or serialized.
+        std::vector<column_id_t> columnIDs;
+        columnIDs.push_back(0);
+        for (auto& property : tableEntry->getProperties()) {
+            columnIDs.push_back(tableEntry->getColumnID(property.getName()));
+        }
+        for (auto& directedRelData : directedRelData) {
+            directedRelData->checkpoint(columnIDs);
+        }
+        tableEntry->vacuumColumnIDs(1);
+        hasChanges = false;
+    }
+    Table::serialize(ser);
+    ser.writeDebuggingInfo("next_rel_offset");
+    ser.write<offset_t>(nextRelOffset);
+    for (auto& directedRelData : directedRelData) {
+        directedRelData->serialize(ser);
+    }
+}
+
+row_idx_t RelTable::getNumTotalRows(const Transaction* transaction) {
+    auto numLocalRows = 0u;
+    if (auto localTable = transaction->getLocalStorage()->getLocalTable(tableID,
+            LocalStorage::NotExistAction::RETURN_NULL)) {
+        numLocalRows = localTable->getNumTotalRows();
+    }
+    return numLocalRows + nextRelOffset;
 }
 
 } // namespace storage

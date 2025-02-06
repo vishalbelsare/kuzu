@@ -3,7 +3,7 @@
 #include "binder/bound_statement_result.h"
 #include "main/kuzu.h"
 #include "node_util.h"
-#include "planner/logical_plan/logical_plan.h"
+#include "planner/operator/logical_plan.h"
 #include "processor/result/factorized_table.h"
 #include <napi.h>
 
@@ -13,34 +13,40 @@ using namespace kuzu::main;
 class NodeQueryResult : public Napi::ObjectWrap<NodeQueryResult> {
     friend class NodeQueryResultGetNextAsyncWorker;
     friend class NodeQueryResultGetColumnMetadataAsyncWorker;
+    friend class NodeQueryResultGetNextQueryResultAsyncWorker;
 
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
-    NodeQueryResult(const Napi::CallbackInfo& info);
-    void SetQueryResult(std::shared_ptr<QueryResult>& queryResult);
-    ~NodeQueryResult() = default;
+    explicit NodeQueryResult(const Napi::CallbackInfo& info);
+    void SetQueryResult(QueryResult* queryResult, bool isOwned);
+    ~NodeQueryResult() override;
 
 private:
     void ResetIterator(const Napi::CallbackInfo& info);
     Napi::Value HasNext(const Napi::CallbackInfo& info);
+    Napi::Value HasNextQueryResult(const Napi::CallbackInfo& info);
+    Napi::Value GetNextQueryResultAsync(const Napi::CallbackInfo& info);
     Napi::Value GetNumTuples(const Napi::CallbackInfo& info);
     Napi::Value GetNextAsync(const Napi::CallbackInfo& info);
     Napi::Value GetColumnDataTypesAsync(const Napi::CallbackInfo& info);
     Napi::Value GetColumnNamesAsync(const Napi::CallbackInfo& info);
+    void Close(const Napi::CallbackInfo& info);
+    void Close();
 
 private:
-    std::shared_ptr<QueryResult> queryResult;
+    QueryResult* queryResult = nullptr;
+    bool isOwned = false;
 };
 
 enum GetColumnMetadataType { DATA_TYPE, NAME };
 
 class NodeQueryResultGetColumnMetadataAsyncWorker : public Napi::AsyncWorker {
 public:
-    NodeQueryResultGetColumnMetadataAsyncWorker(
-        Napi::Function& callback, NodeQueryResult* nodeQueryResult, GetColumnMetadataType type)
+    NodeQueryResultGetColumnMetadataAsyncWorker(Napi::Function& callback,
+        NodeQueryResult* nodeQueryResult, GetColumnMetadataType type)
         : AsyncWorker(callback), nodeQueryResult(nodeQueryResult), type(type) {}
 
-    ~NodeQueryResultGetColumnMetadataAsyncWorker() = default;
+    ~NodeQueryResultGetColumnMetadataAsyncWorker() override = default;
 
     inline void Execute() override {
         try {
@@ -48,13 +54,14 @@ public:
                 auto columnDataTypes = nodeQueryResult->queryResult->getColumnDataTypes();
                 result = std::vector<std::string>(columnDataTypes.size());
                 for (auto i = 0u; i < columnDataTypes.size(); ++i) {
-                    result[i] =
-                        kuzu::common::LogicalTypeUtils::dataTypeToString(columnDataTypes[i]);
+                    result[i] = columnDataTypes[i].toString();
                 }
             } else {
                 result = nodeQueryResult->queryResult->getColumnNames();
             }
-        } catch (const std::exception& exc) { SetError(std::string(exc.what())); }
+        } catch (const std::exception& exc) {
+            SetError(std::string(exc.what()));
+        }
     }
 
     inline void OnOK() override {
@@ -79,7 +86,7 @@ public:
     NodeQueryResultGetNextAsyncWorker(Napi::Function& callback, NodeQueryResult* nodeQueryResult)
         : AsyncWorker(callback), nodeQueryResult(nodeQueryResult) {}
 
-    ~NodeQueryResultGetNextAsyncWorker() = default;
+    ~NodeQueryResultGetNextAsyncWorker() override = default;
 
     inline void Execute() override {
         try {
@@ -87,7 +94,9 @@ public:
                 cppTuple.reset();
             }
             cppTuple = nodeQueryResult->queryResult->getNext();
-        } catch (const std::exception& exc) { SetError(std::string(exc.what())); }
+        } catch (const std::exception& exc) {
+            SetError(std::string(exc.what()));
+        }
     }
 
     inline void OnOK() override {
@@ -99,7 +108,7 @@ public:
         Napi::Object nodeTuple = Napi::Object::New(env);
         try {
             auto columnNames = nodeQueryResult->queryResult->getColumnNames();
-            for (auto i = 0; i < cppTuple->len(); ++i) {
+            for (auto i = 0u; i < cppTuple->len(); ++i) {
                 Napi::Value value = Util::ConvertToNapiObject(*cppTuple->getValue(i), env);
                 nodeTuple.Set(columnNames[i], value);
             }
@@ -115,4 +124,35 @@ public:
 private:
     NodeQueryResult* nodeQueryResult;
     std::shared_ptr<FlatTuple> cppTuple;
+};
+
+class NodeQueryResultGetNextQueryResultAsyncWorker : public Napi::AsyncWorker {
+public:
+    NodeQueryResultGetNextQueryResultAsyncWorker(Napi::Function& callback,
+        NodeQueryResult* currentQueryResult, NodeQueryResult* nextQueryResult)
+        : AsyncWorker(callback), currQueryResult(currentQueryResult),
+          nextQueryResult(nextQueryResult) {}
+
+    ~NodeQueryResultGetNextQueryResultAsyncWorker() override = default;
+
+    void Execute() override {
+        try {
+            auto nextResult = currQueryResult->queryResult->getNextQueryResult();
+            if (!nextResult->isSuccess()) {
+                SetError(nextResult->getErrorMessage());
+                return;
+            }
+            nextQueryResult->SetQueryResult(nextResult, false);
+        } catch (const std::exception& exc) {
+            SetError(std::string(exc.what()));
+        }
+    }
+
+    void OnOK() override { Callback().Call({Env().Null()}); }
+
+    void OnError(Napi::Error const& error) override { Callback().Call({error.Value()}); }
+
+private:
+    NodeQueryResult* currQueryResult;
+    NodeQueryResult* nextQueryResult;
 };

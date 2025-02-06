@@ -1,21 +1,26 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
-class VectorTimestampFunction : public VectorFunction {};
 
-struct CenturyVectorFunction : public VectorTimestampFunction {
-    static vector_function_definitions getDefinitions();
+struct CenturyFunction {
+    static constexpr const char* name = "CENTURY";
+
+    static function_set getFunctionSet();
 };
 
-struct EpochMsVectorFunction : public VectorTimestampFunction {
-    static vector_function_definitions getDefinitions();
+struct EpochMsFunction {
+    static constexpr const char* name = "EPOCH_MS";
+
+    static function_set getFunctionSet();
 };
 
-struct ToTimestampVectorFunction : public VectorTimestampFunction {
-    static vector_function_definitions getDefinitions();
+struct ToTimestampFunction {
+    static constexpr const char* name = "TO_TIMESTAMP";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

@@ -1,12 +1,14 @@
 #include "processor/operator/profile.h"
 
 #include "main/plan_printer.h"
-#include "processor/physical_plan.h"
+#include "processor/execution_context.h"
+
+using namespace kuzu::common;
 
 namespace kuzu {
 namespace processor {
 
-void Profile::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) {
+void Profile::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* /*context*/) {
     outputVector = resultSet->getValueVector(outputPos).get();
 }
 
@@ -15,15 +17,14 @@ bool Profile::getNextTuplesInternal(ExecutionContext* context) {
         return false;
     }
     localState.hasExecuted = true;
-    common::ku_string_t profileStr;
-    auto planPrinter = std::make_unique<main::PlanPrinter>(info.physicalPlan, context->profiler);
-    auto planInString = planPrinter->printPlanToOstream().str();
-    common::StringVector::addString(
-        outputVector, profileStr, planInString.c_str(), planInString.length());
-    auto selVector = outputVector->state->selVector;
-    selVector->selectedSize = 1;
-    outputVector->setValue<common::ku_string_t>(selVector->selectedPositions[0], profileStr);
-    metrics->numOutputTuple.increase(1);
+    ku_string_t profileStr;
+    const auto planInString =
+        main::PlanPrinter::printPlanToOstream(info.physicalPlan, context->profiler).str();
+    StringVector::addString(outputVector, profileStr, planInString.c_str(), planInString.length());
+    auto& selVector = outputVector->state->getSelVectorUnsafe();
+    selVector.setSelSize(1);
+    outputVector->setValue<ku_string_t>(selVector[0], profileStr);
+    metrics->numOutputTuple.incrementByOne();
     return true;
 }
 

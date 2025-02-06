@@ -1,8 +1,7 @@
 #pragma once
 
-#include <functional>
-
 #include "common/vector/value_vector.h"
+#include "function/cast/cast_function_bind_data.h"
 
 namespace kuzu {
 namespace function {
@@ -14,98 +13,144 @@ namespace function {
 
 struct UnaryFunctionWrapper {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static inline void operation(OPERAND_TYPE& input, RESULT_TYPE& result, void* inputVector,
-        void* resultVector, void* dataPtr) {
-        FUNC::operation(input, result);
+    static inline void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* /*dataPtr*/) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_.getValue<RESULT_TYPE>(resultPos));
+    }
+};
+
+struct UnarySequenceFunctionWrapper {
+    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
+    static inline void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t /* resultPos */, void* dataPtr) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos), resultVector_, dataPtr);
     }
 };
 
 struct UnaryStringFunctionWrapper {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void operation(OPERAND_TYPE& input, RESULT_TYPE& result, void* inputVector,
-        void* resultVector, void* dataPtr) {
-        FUNC::operation(input, result, *(common::ValueVector*)resultVector);
+    static void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* /*dataPtr*/) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_.getValue<RESULT_TYPE>(resultPos), resultVector_);
     }
 };
 
-struct UnaryListFunctionWrapper {
+struct UnaryStructFunctionWrapper {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static inline void operation(OPERAND_TYPE& input, RESULT_TYPE& result, void* leftValueVector,
-        void* resultValueVector, void* dataPtr) {
-        FUNC::operation(input, result, *(common::ValueVector*)leftValueVector,
-            *(common::ValueVector*)resultValueVector);
+    static void operation(void* /*inputVector*/, uint64_t /*inputPos*/, void* resultVector,
+        uint64_t resultPos, void* dataPtr) {
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(resultVector_.getValue<RESULT_TYPE>(resultPos), resultVector_, dataPtr);
+    }
+};
+
+struct UnaryCastStringFunctionWrapper {
+    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
+    static void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* dataPtr) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto resultVector_ = (common::ValueVector*)resultVector;
+        // TODO(Ziyi): the reinterpret_cast is not safe since we don't always pass
+        // CastFunctionBindData
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_->getValue<RESULT_TYPE>(resultPos), resultVector_, inputPos,
+            &reinterpret_cast<CastFunctionBindData*>(dataPtr)->option);
+    }
+};
+
+struct UnaryNestedTypeFunctionWrapper {
+    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
+    static inline void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* /*dataPtr*/) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_.getValue<RESULT_TYPE>(resultPos), inputVector_, resultVector_);
     }
 };
 
 struct UnaryCastFunctionWrapper {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void operation(OPERAND_TYPE& input, RESULT_TYPE& result, void* inputVector,
-        void* resultVector, void* dataPtr) {
-        FUNC::operation(
-            input, result, *(common::ValueVector*)inputVector, *(common::ValueVector*)resultVector);
+    static void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* /*dataPtr*/) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_.getValue<RESULT_TYPE>(resultPos), inputVector_, resultVector_);
     }
 };
 
 struct UnaryUDFFunctionWrapper {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static inline void operation(OPERAND_TYPE& input, RESULT_TYPE& result, void* inputVector,
-        void* resultVector, void* dataPtr) {
-        FUNC::operation(input, result, dataPtr);
+    static inline void operation(void* inputVector, uint64_t inputPos, void* resultVector,
+        uint64_t resultPos, void* dataPtr) {
+        auto& inputVector_ = *(common::ValueVector*)inputVector;
+        auto& resultVector_ = *(common::ValueVector*)resultVector;
+        FUNC::operation(inputVector_.getValue<OPERAND_TYPE>(inputPos),
+            resultVector_.getValue<RESULT_TYPE>(resultPos), dataPtr);
     }
 };
 
 struct UnaryFunctionExecutor {
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC, typename OP_WRAPPER>
-    static void executeOnValue(common::ValueVector& operand, uint64_t operandPos,
-        RESULT_TYPE& resultValue, common::ValueVector& resultValueVector, void* dataPtr) {
-        OP_WRAPPER::template operation<OPERAND_TYPE, RESULT_TYPE, FUNC>(
-            ((OPERAND_TYPE*)operand.getData())[operandPos], resultValue, (void*)&operand,
-            (void*)&resultValueVector, dataPtr);
+    static void executeOnValue(common::ValueVector& inputVector, uint64_t inputPos,
+        common::ValueVector& resultVector, uint64_t resultPos, void* dataPtr) {
+        OP_WRAPPER::template operation<OPERAND_TYPE, RESULT_TYPE, FUNC>((void*)&inputVector,
+            inputPos, (void*)&resultVector, resultPos, dataPtr);
     }
 
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC, typename OP_WRAPPER>
-    static void executeSwitch(
-        common::ValueVector& operand, common::ValueVector& result, void* dataPtr) {
+    static void executeSwitch(common::ValueVector& operand, common::ValueVector& result,
+        void* dataPtr) {
         result.resetAuxiliaryBuffer();
-        auto resultValues = (RESULT_TYPE*)result.getData();
+        auto& operandSelVector = operand.state->getSelVector();
         if (operand.state->isFlat()) {
-            auto inputPos = operand.state->selVector->selectedPositions[0];
-            auto resultPos = result.state->selVector->selectedPositions[0];
+            auto inputPos = operandSelVector[0];
+            auto resultPos = result.state->getSelVector()[0];
             result.setNull(resultPos, operand.isNull(inputPos));
-            if (!result.isNull(inputPos)) {
-                executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(
-                    operand, inputPos, resultValues[resultPos], result, dataPtr);
+            if (!result.isNull(resultPos)) {
+                executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(operand, inputPos,
+                    result, resultPos, dataPtr);
             }
         } else {
             if (operand.hasNoNullsGuarantee()) {
-                if (operand.state->selVector->isUnfiltered()) {
-                    for (auto i = 0u; i < operand.state->selVector->selectedSize; i++) {
-                        executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(
-                            operand, i, resultValues[i], result, dataPtr);
+                result.setAllNonNull();
+                if (operandSelVector.isUnfiltered()) {
+                    for (auto i = 0u; i < operandSelVector.getSelSize(); i++) {
+                        executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(operand, i,
+                            result, i, dataPtr);
                     }
                 } else {
-                    for (auto i = 0u; i < operand.state->selVector->selectedSize; i++) {
-                        auto pos = operand.state->selVector->selectedPositions[i];
-                        executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(
-                            operand, pos, resultValues[pos], result, dataPtr);
+                    for (auto i = 0u; i < operandSelVector.getSelSize(); i++) {
+                        auto pos = operandSelVector[i];
+                        executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(operand, pos,
+                            result, pos, dataPtr);
                     }
                 }
             } else {
-                if (operand.state->selVector->isUnfiltered()) {
-                    for (auto i = 0u; i < operand.state->selVector->selectedSize; i++) {
+                if (operandSelVector.isUnfiltered()) {
+                    for (auto i = 0u; i < operandSelVector.getSelSize(); i++) {
                         result.setNull(i, operand.isNull(i));
                         if (!result.isNull(i)) {
-                            executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(
-                                operand, i, resultValues[i], result, dataPtr);
+                            executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(operand, i,
+                                result, i, dataPtr);
                         }
                     }
                 } else {
-                    for (auto i = 0u; i < operand.state->selVector->selectedSize; i++) {
-                        auto pos = operand.state->selVector->selectedPositions[i];
+                    for (auto i = 0u; i < operandSelVector.getSelSize(); i++) {
+                        auto pos = operandSelVector[i];
                         result.setNull(pos, operand.isNull(pos));
                         if (!result.isNull(pos)) {
-                            executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(
-                                operand, pos, resultValues[pos], result, dataPtr);
+                            executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, OP_WRAPPER>(operand,
+                                pos, result, pos, dataPtr);
                         }
                     }
                 }
@@ -115,33 +160,25 @@ struct UnaryFunctionExecutor {
 
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
     static void execute(common::ValueVector& operand, common::ValueVector& result) {
-        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryFunctionWrapper>(
-            operand, result, nullptr /* dataPtr */);
+        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryFunctionWrapper>(operand, result,
+            nullptr /* dataPtr */);
     }
 
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void executeString(common::ValueVector& operand, common::ValueVector& result) {
-        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryStringFunctionWrapper>(
-            operand, result, nullptr /* dataPtr */);
+    static void executeUDF(common::ValueVector& operand, common::ValueVector& result,
+        void* dataPtr) {
+        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryUDFFunctionWrapper>(operand, result,
+            dataPtr);
     }
 
     template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void executeListStruct(common::ValueVector& operand, common::ValueVector& result) {
-        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryListFunctionWrapper>(
-            operand, result, nullptr /* dataPtr */);
-    }
-
-    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void executeCast(common::ValueVector& operand, common::ValueVector& result) {
-        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryCastFunctionWrapper>(
-            operand, result, nullptr /* dataPtr */);
-    }
-
-    template<typename OPERAND_TYPE, typename RESULT_TYPE, typename FUNC>
-    static void executeUDF(
-        common::ValueVector& operand, common::ValueVector& result, void* dataPtr) {
-        executeSwitch<OPERAND_TYPE, RESULT_TYPE, FUNC, UnaryUDFFunctionWrapper>(
-            operand, result, dataPtr);
+    static void executeSequence(common::ValueVector& operand, common::ValueVector& result,
+        void* dataPtr) {
+        result.resetAuxiliaryBuffer();
+        auto inputPos = operand.state->getSelVector()[0];
+        auto resultPos = result.state->getSelVector()[0];
+        executeOnValue<OPERAND_TYPE, RESULT_TYPE, FUNC, UnarySequenceFunctionWrapper>(operand,
+            inputPos, result, resultPos, dataPtr);
     }
 };
 

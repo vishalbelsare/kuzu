@@ -1,7 +1,9 @@
 #pragma once
 
 #include <memory>
+#include <mutex>
 #include <unordered_map>
+#include <vector>
 
 #include "common/metric.h"
 
@@ -24,7 +26,7 @@ private:
 
 public:
     std::mutex mtx;
-    bool enabled;
+    bool enabled = false;
     std::unordered_map<std::string, std::vector<std::unique_ptr<Metric>>> metrics;
 };
 

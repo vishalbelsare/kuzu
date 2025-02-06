@@ -1,503 +1,324 @@
 #pragma once
 
-#include "common/rel_direction.h"
-#include "common/types/types_include.h"
-#include "common/utils.h"
+#include <cstdint>
+
+#include "binder/ddl/bound_alter_info.h"
+#include "catalog/catalog_entry/catalog_entry.h"
+#include "catalog/catalog_entry/sequence_catalog_entry.h"
+#include "common/enums/rel_direction.h"
+#include "common/enums/table_type.h"
+#include "common/vector/value_vector.h"
 
 namespace kuzu {
+namespace common {
+class Serializer;
+class Deserializer;
+} // namespace common
+
 namespace storage {
 
-enum class ListType : uint8_t {
-    ADJ_LISTS = 0,
-    REL_PROPERTY_LISTS = 1,
-};
-
-enum class ListFileType : uint8_t {
-    BASE_LISTS = 0,
-    HEADERS = 1,
-    METADATA = 2,
-};
-
-enum class ColumnType : uint8_t {
-    NODE_PROPERTY_COLUMN = 0,
-    ADJ_COLUMN = 1,
-    REL_PROPERTY_COLUMN = 2,
-};
-
-struct RelNodeTableAndDir {
-    common::table_id_t relTableID;
-    common::RelDataDirection dir;
-
-    RelNodeTableAndDir() = default;
-
-    RelNodeTableAndDir(common::table_id_t relTableID, common::RelDataDirection dir)
-        : relTableID{relTableID}, dir{dir} {}
-
-    inline bool operator==(const RelNodeTableAndDir& rhs) const {
-        return relTableID == rhs.relTableID && dir == rhs.dir;
-    }
-};
-
-struct AdjListsID {
-    RelNodeTableAndDir relNodeTableAndDir;
-
-    AdjListsID() = default;
-
-    explicit AdjListsID(RelNodeTableAndDir relNodeTableAndDir)
-        : relNodeTableAndDir{relNodeTableAndDir} {}
-
-    inline bool operator==(const AdjListsID& rhs) const {
-        return relNodeTableAndDir == rhs.relNodeTableAndDir;
-    }
-};
-
-struct RelPropertyListsID {
-    RelNodeTableAndDir relNodeTableAndDir;
-    common::property_id_t propertyID;
-
-    RelPropertyListsID() = default;
-
-    RelPropertyListsID(RelNodeTableAndDir relNodeTableAndDir, common::property_id_t propertyID)
-        : relNodeTableAndDir{relNodeTableAndDir}, propertyID{propertyID} {}
-
-    inline bool operator==(const RelPropertyListsID& rhs) const {
-        return relNodeTableAndDir == rhs.relNodeTableAndDir && propertyID == rhs.propertyID;
-    }
-};
-
-struct ListFileID {
-    ListType listType;
-    ListFileType listFileType;
-    union {
-        AdjListsID adjListsID;
-        RelPropertyListsID relPropertyListID;
-    };
-
-    ListFileID() = default;
-
-    ListFileID(ListFileType listFileType, AdjListsID adjListsID)
-        : listType{ListType::ADJ_LISTS}, listFileType{listFileType}, adjListsID{adjListsID} {}
-
-    ListFileID(ListFileType listFileType, RelPropertyListsID relPropertyListID)
-        : listType{ListType::REL_PROPERTY_LISTS}, listFileType{listFileType},
-          relPropertyListID{relPropertyListID} {}
-
-    inline bool operator==(const ListFileID& rhs) const {
-        if (listType != rhs.listType || listFileType != rhs.listFileType) {
-            return false;
-        }
-        switch (listType) {
-        case ListType::ADJ_LISTS: {
-            return adjListsID == rhs.adjListsID;
-        }
-        case ListType::REL_PROPERTY_LISTS: {
-            return relPropertyListID == rhs.relPropertyListID;
-        }
-        }
-    }
-};
-
-struct NodePropertyColumnID {
-    common::table_id_t tableID;
-    common::property_id_t propertyID;
-
-    NodePropertyColumnID() = default;
-
-    NodePropertyColumnID(common::table_id_t tableID, common::property_id_t propertyID)
-        : tableID{tableID}, propertyID{propertyID} {}
-
-    inline bool operator==(const NodePropertyColumnID& rhs) const {
-        return tableID == rhs.tableID && propertyID == rhs.propertyID;
-    }
-};
-
-struct AdjColumnID {
-    RelNodeTableAndDir relNodeTableAndDir;
-
-    AdjColumnID() = default;
-
-    explicit AdjColumnID(RelNodeTableAndDir relNodeTableAndDir)
-        : relNodeTableAndDir{relNodeTableAndDir} {}
-
-    inline bool operator==(const AdjColumnID& rhs) const {
-        return relNodeTableAndDir == rhs.relNodeTableAndDir;
-    }
-};
-
-struct RelPropertyColumnID {
-    RelNodeTableAndDir relNodeTableAndDir;
-    common::property_id_t propertyID;
-
-    RelPropertyColumnID() = default;
-
-    RelPropertyColumnID(RelNodeTableAndDir relNodeTableAndDir, common::property_id_t propertyID)
-        : relNodeTableAndDir{relNodeTableAndDir}, propertyID{propertyID} {}
-
-    inline bool operator==(const RelPropertyColumnID& rhs) const {
-        return relNodeTableAndDir == rhs.relNodeTableAndDir && propertyID == rhs.propertyID;
-    }
-};
-
-struct ColumnFileID {
-    ColumnType columnType;
-    union {
-        NodePropertyColumnID nodePropertyColumnID;
-        AdjColumnID adjColumnID;
-        RelPropertyColumnID relPropertyColumnID;
-    };
-
-    ColumnFileID() = default;
-
-    explicit ColumnFileID(NodePropertyColumnID nodePropertyColumnID,
-        ColumnType columnType = ColumnType::NODE_PROPERTY_COLUMN)
-        : columnType{columnType}, nodePropertyColumnID{nodePropertyColumnID} {}
-
-    explicit ColumnFileID(AdjColumnID adjColumnID)
-        : columnType{ColumnType::ADJ_COLUMN}, adjColumnID{adjColumnID} {}
-
-    explicit ColumnFileID(RelPropertyColumnID relPropertyColumnID)
-        : columnType{ColumnType::REL_PROPERTY_COLUMN}, relPropertyColumnID{relPropertyColumnID} {}
-
-    inline bool operator==(const ColumnFileID& rhs) const {
-        if (columnType != rhs.columnType) {
-            return false;
-        }
-        switch (columnType) {
-        case ColumnType::NODE_PROPERTY_COLUMN: {
-            return nodePropertyColumnID == rhs.nodePropertyColumnID;
-        }
-        case ColumnType::ADJ_COLUMN: {
-            return adjColumnID == rhs.adjColumnID;
-        }
-        case ColumnType::REL_PROPERTY_COLUMN: {
-            return relPropertyColumnID == rhs.relPropertyColumnID;
-        }
-        default: {
-            assert(false);
-        }
-        }
-    }
-};
-
-struct NodeIndexID {
-    common::table_id_t tableID;
-
-    NodeIndexID() = default;
-
-    explicit NodeIndexID(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const NodeIndexID& rhs) const { return tableID == rhs.tableID; }
-};
-
-enum class StorageStructureType : uint8_t {
-    COLUMN = 0,
-    LISTS = 1,
-    NODE_INDEX = 2,
-};
-
-std::string storageStructureTypeToString(StorageStructureType storageStructureType);
-
-// StorageStructureIDs start with 1 byte type and 1 byte isOverflow field followed with additional
-// bytes needed by the different log types. We don't need these to be byte aligned because they are
-// not stored in memory. These are used to serialize and deserialize log entries.
-struct StorageStructureID {
-    StorageStructureType storageStructureType;
-    bool isOverflow;
-    bool isNullBits;
-    union {
-        ColumnFileID columnFileID;
-        ListFileID listFileID;
-        NodeIndexID nodeIndexID;
-    };
-
-    inline bool operator==(const StorageStructureID& rhs) const {
-        if (storageStructureType != rhs.storageStructureType || isOverflow != rhs.isOverflow) {
-            return false;
-        }
-        switch (storageStructureType) {
-        case StorageStructureType::COLUMN: {
-            return columnFileID == rhs.columnFileID;
-        }
-        case StorageStructureType::LISTS: {
-            return listFileID == rhs.listFileID;
-        }
-        case StorageStructureType::NODE_INDEX: {
-            return nodeIndexID == rhs.nodeIndexID;
-        }
-        default: {
-            assert(false);
-        }
-        }
-    }
-
-    static StorageStructureID newNodePropertyColumnID(
-        common::table_id_t tableID, common::property_id_t propertyID);
-
-    static StorageStructureID newRelPropertyColumnID(common::table_id_t relTableID,
-        common::RelDataDirection dir, common::property_id_t propertyID);
-
-    static StorageStructureID newAdjColumnID(
-        common::table_id_t relTableID, common::RelDataDirection dir);
-
-    static StorageStructureID newNodeIndexID(common::table_id_t tableID);
-
-    static StorageStructureID newAdjListsID(
-        common::table_id_t relTableID, common::RelDataDirection dir, ListFileType listFileType);
-
-    static StorageStructureID newRelPropertyListsID(common::table_id_t relTableID,
-        common::RelDataDirection dir, common::property_id_t propertyID, ListFileType listFileType);
-};
-
 enum class WALRecordType : uint8_t {
-    PAGE_UPDATE_OR_INSERT_RECORD = 0,
-    TABLE_STATISTICS_RECORD = 1,
+    INVALID_RECORD = 0, // This is not used for any record. 0 is reserved to detect cases where we
+                        // accidentally read from an empty buffer.
+    BEGIN_TRANSACTION_RECORD = 1,
     COMMIT_RECORD = 2,
-    CATALOG_RECORD = 3,
-    NODE_TABLE_RECORD = 4,
-    REL_TABLE_RECORD = 5,
-    // Records the nextBytePosToWriteTo field's last value before the write trx started. This is
-    // used when rolling back to restore this value.
-    OVERFLOW_FILE_NEXT_BYTE_POS_RECORD = 6,
-    COPY_NODE_RECORD = 7,
-    COPY_REL_RECORD = 8,
-    DROP_TABLE_RECORD = 9,
-    DROP_PROPERTY_RECORD = 10,
-    ADD_PROPERTY_RECORD = 11,
-};
-
-std::string walRecordTypeToString(WALRecordType walRecordType);
-
-struct PageUpdateOrInsertRecord {
-    StorageStructureID storageStructureID;
-    // PageIdx in the file of updated storage structure, identified by the storageStructureID field
-    uint64_t pageIdxInOriginalFile;
-    uint64_t pageIdxInWAL;
-    bool isInsert;
-
-    PageUpdateOrInsertRecord() = default;
-
-    PageUpdateOrInsertRecord(StorageStructureID storageStructureID, uint64_t pageIdxInOriginalFile,
-        uint64_t pageIdxInWAL, bool isInsert)
-        : storageStructureID{storageStructureID}, pageIdxInOriginalFile{pageIdxInOriginalFile},
-          pageIdxInWAL{pageIdxInWAL}, isInsert{isInsert} {}
-
-    inline bool operator==(const PageUpdateOrInsertRecord& rhs) const {
-        return storageStructureID == rhs.storageStructureID &&
-               pageIdxInOriginalFile == rhs.pageIdxInOriginalFile &&
-               pageIdxInWAL == rhs.pageIdxInWAL && isInsert == rhs.isInsert;
-    }
-};
-
-struct CommitRecord {
-    uint64_t transactionID;
-
-    CommitRecord() = default;
-
-    explicit CommitRecord(uint64_t transactionID) : transactionID{transactionID} {}
-
-    inline bool operator==(const CommitRecord& rhs) const {
-        return transactionID == rhs.transactionID;
-    }
-};
-
-struct NodeTableRecord {
-    common::table_id_t tableID;
-
-    NodeTableRecord() = default;
-
-    explicit NodeTableRecord(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const NodeTableRecord& rhs) const { return tableID == rhs.tableID; }
-};
-
-struct RelTableRecord {
-    common::table_id_t tableID;
-
-    RelTableRecord() = default;
-
-    explicit RelTableRecord(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const RelTableRecord& rhs) const { return tableID == rhs.tableID; }
-};
-
-struct DiskOverflowFileNextBytePosRecord {
-    StorageStructureID storageStructureID;
-    uint64_t prevNextBytePosToWriteTo;
-
-    DiskOverflowFileNextBytePosRecord() = default;
-
-    DiskOverflowFileNextBytePosRecord(
-        StorageStructureID storageStructureID, uint64_t prevNextByteToWriteTo)
-        : storageStructureID{storageStructureID}, prevNextBytePosToWriteTo{prevNextByteToWriteTo} {}
-
-    inline bool operator==(const DiskOverflowFileNextBytePosRecord& rhs) const {
-        return storageStructureID == rhs.storageStructureID &&
-               prevNextBytePosToWriteTo == rhs.prevNextBytePosToWriteTo;
-    }
-};
-
-struct CopyNodeRecord {
-    common::table_id_t tableID;
-
-    CopyNodeRecord() = default;
-
-    explicit CopyNodeRecord(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const CopyNodeRecord& rhs) const { return tableID == rhs.tableID; }
-};
-
-struct CopyRelRecord {
-    common::table_id_t tableID;
-
-    CopyRelRecord() = default;
-
-    explicit CopyRelRecord(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const CopyRelRecord& rhs) const { return tableID == rhs.tableID; }
-};
-
-struct TableStatisticsRecord {
-    // TODO(Guodong): Better to replace the bool with an enum.
-    bool isNodeTable;
-
-    TableStatisticsRecord() = default;
-
-    explicit TableStatisticsRecord(bool isNodeTable) : isNodeTable{isNodeTable} {}
-
-    inline bool operator==(const TableStatisticsRecord& rhs) const {
-        return isNodeTable == rhs.isNodeTable;
-    }
-};
-
-struct DropTableRecord {
-    common::table_id_t tableID;
-
-    DropTableRecord() = default;
-
-    explicit DropTableRecord(common::table_id_t tableID) : tableID{tableID} {}
-
-    inline bool operator==(const DropTableRecord& rhs) const { return tableID == rhs.tableID; }
-};
-
-struct DropPropertyRecord {
-    common::table_id_t tableID;
-    common::property_id_t propertyID;
-
-    DropPropertyRecord() = default;
-
-    DropPropertyRecord(common::table_id_t tableID, common::property_id_t propertyID)
-        : tableID{tableID}, propertyID{propertyID} {}
-
-    inline bool operator==(const DropPropertyRecord& rhs) const {
-        return tableID == rhs.tableID && propertyID == rhs.propertyID;
-    }
-};
-
-struct AddPropertyRecord {
-    common::table_id_t tableID;
-    common::property_id_t propertyID;
-
-    AddPropertyRecord() = default;
-
-    AddPropertyRecord(common::table_id_t tableID, common::property_id_t propertyID)
-        : tableID{tableID}, propertyID{propertyID} {}
-
-    inline bool operator==(const AddPropertyRecord& rhs) const {
-        return tableID == rhs.tableID && propertyID == rhs.propertyID;
-    }
+    ROLLBACK_RECORD = 3,
+    COPY_TABLE_RECORD = 13,
+    CREATE_CATALOG_ENTRY_RECORD = 14,
+    DROP_CATALOG_ENTRY_RECORD = 16,
+    ALTER_TABLE_ENTRY_RECORD = 17,
+    UPDATE_SEQUENCE_RECORD = 18,
+    TABLE_INSERTION_RECORD = 30,
+    NODE_DELETION_RECORD = 31,
+    NODE_UDPATE_RECORD = 32,
+    REL_DELETION_RECORD = 33,
+    REL_DETACH_DELETE_RECORD = 34,
+    REL_UPDATE_RECORD = 35,
+    CHECKPOINT_RECORD = 50,
 };
 
 struct WALRecord {
-    WALRecordType recordType;
-    union {
-        PageUpdateOrInsertRecord pageInsertOrUpdateRecord;
-        CommitRecord commitRecord;
-        NodeTableRecord nodeTableRecord;
-        RelTableRecord relTableRecord;
-        DiskOverflowFileNextBytePosRecord diskOverflowFileNextBytePosRecord;
-        CopyNodeRecord copyNodeRecord;
-        CopyRelRecord copyRelRecord;
-        TableStatisticsRecord tableStatisticsRecord;
-        DropTableRecord dropTableRecord;
-        DropPropertyRecord dropPropertyRecord;
-        AddPropertyRecord addPropertyRecord;
-    };
+    WALRecordType type = WALRecordType::INVALID_RECORD;
 
-    bool operator==(const WALRecord& rhs) const {
-        if (recordType != rhs.recordType) {
-            return false;
-        }
-        switch (recordType) {
-        case WALRecordType::PAGE_UPDATE_OR_INSERT_RECORD: {
-            return pageInsertOrUpdateRecord == rhs.pageInsertOrUpdateRecord;
-        }
-        case WALRecordType::COMMIT_RECORD: {
-            return commitRecord == rhs.commitRecord;
-        }
-        case WALRecordType::TABLE_STATISTICS_RECORD: {
-            return tableStatisticsRecord == rhs.tableStatisticsRecord;
-        }
-        case WALRecordType::CATALOG_RECORD: {
-            // CatalogRecords are empty so are always equal
-            return true;
-        }
-        case WALRecordType::NODE_TABLE_RECORD: {
-            return nodeTableRecord == rhs.nodeTableRecord;
-        }
-        case WALRecordType::REL_TABLE_RECORD: {
-            return relTableRecord == rhs.relTableRecord;
-        }
-        case WALRecordType::OVERFLOW_FILE_NEXT_BYTE_POS_RECORD: {
-            return diskOverflowFileNextBytePosRecord == rhs.diskOverflowFileNextBytePosRecord;
-        }
-        case WALRecordType::COPY_NODE_RECORD: {
-            return copyNodeRecord == rhs.copyNodeRecord;
-        }
-        case WALRecordType::COPY_REL_RECORD: {
-            return copyRelRecord == rhs.copyRelRecord;
-        }
-        case WALRecordType::DROP_TABLE_RECORD: {
-            return dropTableRecord == rhs.dropTableRecord;
-        }
-        case WALRecordType::DROP_PROPERTY_RECORD: {
-            return dropPropertyRecord == rhs.dropPropertyRecord;
-        }
-        case WALRecordType::ADD_PROPERTY_RECORD: {
-            return addPropertyRecord == rhs.addPropertyRecord;
-        }
-        default: {
-            throw common::RuntimeException("Unrecognized WAL record type inside ==. recordType: " +
-                                           walRecordTypeToString(recordType));
-        }
-        }
+    WALRecord() = default;
+    explicit WALRecord(WALRecordType type) : type{type} {}
+    virtual ~WALRecord() = default;
+    DELETE_COPY_DEFAULT_MOVE(WALRecord);
+
+    virtual void serialize(common::Serializer& serializer) const;
+    static std::unique_ptr<WALRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+
+    template<class TARGET>
+    const TARGET& constCast() const {
+        return common::ku_dynamic_cast<const TARGET&>(*this);
+    }
+};
+
+struct BeginTransactionRecord final : WALRecord {
+    BeginTransactionRecord() : WALRecord{WALRecordType::BEGIN_TRANSACTION_RECORD} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<BeginTransactionRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct CommitRecord final : WALRecord {
+    CommitRecord() : WALRecord{WALRecordType::COMMIT_RECORD} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<CommitRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct RollbackRecord final : WALRecord {
+    RollbackRecord() : WALRecord{WALRecordType::ROLLBACK_RECORD} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<RollbackRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct CheckpointRecord final : WALRecord {
+    CheckpointRecord() : WALRecord{WALRecordType::CHECKPOINT_RECORD} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<CheckpointRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct CreateCatalogEntryRecord final : WALRecord {
+    catalog::CatalogEntry* catalogEntry;
+    std::unique_ptr<catalog::CatalogEntry> ownedCatalogEntry;
+    bool isInternal = false;
+
+    CreateCatalogEntryRecord()
+        : WALRecord{WALRecordType::CREATE_CATALOG_ENTRY_RECORD}, catalogEntry{nullptr} {}
+    CreateCatalogEntryRecord(catalog::CatalogEntry* catalogEntry, bool isInternal)
+        : WALRecord{WALRecordType::CREATE_CATALOG_ENTRY_RECORD}, catalogEntry{catalogEntry},
+          isInternal{isInternal} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<CreateCatalogEntryRecord> deserialize(
+        common::Deserializer& deserializer);
+};
+
+struct CopyTableRecord final : WALRecord {
+    common::table_id_t tableID;
+
+    CopyTableRecord()
+        : WALRecord{WALRecordType::COPY_TABLE_RECORD}, tableID{common::INVALID_TABLE_ID} {}
+    explicit CopyTableRecord(common::table_id_t tableID)
+        : WALRecord{WALRecordType::COPY_TABLE_RECORD}, tableID{tableID} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<CopyTableRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct DropCatalogEntryRecord final : WALRecord {
+    common::oid_t entryID;
+    catalog::CatalogEntryType entryType;
+
+    DropCatalogEntryRecord()
+        : WALRecord{WALRecordType::DROP_CATALOG_ENTRY_RECORD}, entryID{common::INVALID_OID},
+          entryType{} {}
+    DropCatalogEntryRecord(common::table_id_t entryID, catalog::CatalogEntryType entryType)
+        : WALRecord{WALRecordType::DROP_CATALOG_ENTRY_RECORD}, entryID{entryID},
+          entryType{entryType} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<DropCatalogEntryRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct AlterTableEntryRecord final : WALRecord {
+    const binder::BoundAlterInfo* alterInfo;
+    std::unique_ptr<binder::BoundAlterInfo> ownedAlterInfo;
+
+    AlterTableEntryRecord()
+        : WALRecord{WALRecordType::ALTER_TABLE_ENTRY_RECORD}, alterInfo{nullptr} {}
+    explicit AlterTableEntryRecord(const binder::BoundAlterInfo* alterInfo)
+        : WALRecord{WALRecordType::ALTER_TABLE_ENTRY_RECORD}, alterInfo{alterInfo} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<AlterTableEntryRecord> deserialize(common::Deserializer& deserializer);
+};
+
+struct UpdateSequenceRecord final : WALRecord {
+    common::sequence_id_t sequenceID;
+    uint64_t kCount;
+
+    UpdateSequenceRecord()
+        : WALRecord{WALRecordType::UPDATE_SEQUENCE_RECORD}, sequenceID{0}, kCount{0} {}
+    UpdateSequenceRecord(common::sequence_id_t sequenceID, uint64_t kCount)
+        : WALRecord{WALRecordType::UPDATE_SEQUENCE_RECORD}, sequenceID{sequenceID}, kCount{kCount} {
     }
 
-    static WALRecord newPageUpdateRecord(StorageStructureID storageStructureID_,
-        uint64_t pageIdxInOriginalFile, uint64_t pageIdxInWAL);
-    static WALRecord newPageInsertRecord(StorageStructureID storageStructureID_,
-        uint64_t pageIdxInOriginalFile, uint64_t pageIdxInWAL);
-    static WALRecord newCommitRecord(uint64_t transactionID);
-    static WALRecord newTableStatisticsRecord(bool isNodeTable);
-    static WALRecord newCatalogRecord();
-    static WALRecord newNodeTableRecord(common::table_id_t tableID);
-    static WALRecord newRelTableRecord(common::table_id_t tableID);
-    static WALRecord newOverflowFileNextBytePosRecord(
-        StorageStructureID storageStructureID_, uint64_t prevNextByteToWriteTo_);
-    static WALRecord newCopyNodeRecord(common::table_id_t tableID);
-    static WALRecord newCopyRelRecord(common::table_id_t tableID);
-    static WALRecord newDropTableRecord(common::table_id_t tableID);
-    static WALRecord newDropPropertyRecord(
-        common::table_id_t tableID, common::property_id_t propertyID);
-    static WALRecord newAddPropertyRecord(
-        common::table_id_t tableID, common::property_id_t propertyID);
-    static void constructWALRecordFromBytes(WALRecord& retVal, uint8_t* bytes, uint64_t& offset);
-    // This functions assumes that the caller ensures there is enough space in the bytes pointer
-    // to write the record. This should be checked by calling numBytesToWrite.
-    void writeWALRecordToBytes(uint8_t* bytes, uint64_t& offset);
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<UpdateSequenceRecord> deserialize(common::Deserializer& deserializer);
+};
 
-private:
-    static WALRecord newPageInsertOrUpdateRecord(StorageStructureID storageStructureID_,
-        uint64_t pageIdxInOriginalFile, uint64_t pageIdxInWAL, bool isInsert);
+struct TableInsertionRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::TableType tableType;
+    common::row_idx_t numRows;
+    std::vector<common::ValueVector*> vectors;
+    std::vector<std::unique_ptr<common::ValueVector>> ownedVectors;
+
+    TableInsertionRecord()
+        : WALRecord{WALRecordType::TABLE_INSERTION_RECORD}, tableID{common::INVALID_TABLE_ID},
+          tableType{common::TableType::UNKNOWN}, numRows{0} {}
+    TableInsertionRecord(common::table_id_t tableID, common::TableType tableType,
+        common::row_idx_t numRows, const std::vector<common::ValueVector*>& vectors)
+        : WALRecord{WALRecordType::TABLE_INSERTION_RECORD}, tableID{tableID}, tableType{tableType},
+          numRows{numRows}, vectors{vectors} {}
+    TableInsertionRecord(common::table_id_t tableID, common::TableType tableType,
+        common::row_idx_t numRows, std::vector<std::unique_ptr<common::ValueVector>> vectors)
+        : WALRecord{WALRecordType::TABLE_INSERTION_RECORD}, tableID{tableID}, tableType{tableType},
+          numRows{numRows}, ownedVectors{std::move(vectors)} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<TableInsertionRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+};
+
+struct NodeDeletionRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::offset_t nodeOffset;
+    common::ValueVector* pkVector;
+    std::unique_ptr<common::ValueVector> ownedPKVector;
+
+    NodeDeletionRecord()
+        : WALRecord{WALRecordType::NODE_DELETION_RECORD}, tableID{common::INVALID_TABLE_ID},
+          nodeOffset{common::INVALID_OFFSET}, pkVector{nullptr} {}
+    NodeDeletionRecord(common::table_id_t tableID, common::offset_t nodeOffset,
+        common::ValueVector* pkVector)
+        : WALRecord{WALRecordType::NODE_DELETION_RECORD}, tableID{tableID}, nodeOffset{nodeOffset},
+          pkVector{pkVector} {}
+    NodeDeletionRecord(common::table_id_t tableID, common::offset_t nodeOffset,
+        std::unique_ptr<common::ValueVector> pkVector)
+        : WALRecord{WALRecordType::NODE_DELETION_RECORD}, tableID{tableID}, nodeOffset{nodeOffset},
+          pkVector{nullptr}, ownedPKVector{std::move(pkVector)} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<NodeDeletionRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+};
+
+struct NodeUpdateRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::column_id_t columnID;
+    common::offset_t nodeOffset;
+    common::ValueVector* propertyVector;
+    std::unique_ptr<common::ValueVector> ownedPropertyVector;
+
+    NodeUpdateRecord()
+        : WALRecord{WALRecordType::NODE_UDPATE_RECORD}, tableID{common::INVALID_TABLE_ID},
+          columnID{common::INVALID_COLUMN_ID}, nodeOffset{common::INVALID_OFFSET},
+          propertyVector{nullptr} {}
+    NodeUpdateRecord(common::table_id_t tableID, common::column_id_t columnID,
+        common::offset_t nodeOffset, common::ValueVector* propertyVector)
+        : WALRecord{WALRecordType::NODE_UDPATE_RECORD}, tableID{tableID}, columnID{columnID},
+          nodeOffset{nodeOffset}, propertyVector{propertyVector} {}
+    NodeUpdateRecord(common::table_id_t tableID, common::column_id_t columnID,
+        common::offset_t nodeOffset, std::unique_ptr<common::ValueVector> propertyVector)
+        : WALRecord{WALRecordType::NODE_UDPATE_RECORD}, tableID{tableID}, columnID{columnID},
+          nodeOffset{nodeOffset}, propertyVector{nullptr},
+          ownedPropertyVector{std::move(propertyVector)} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<NodeUpdateRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+};
+
+struct RelDeletionRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::ValueVector* srcNodeIDVector;
+    common::ValueVector* dstNodeIDVector;
+    common::ValueVector* relIDVector;
+    std::unique_ptr<common::ValueVector> ownedSrcNodeIDVector;
+    std::unique_ptr<common::ValueVector> ownedDstNodeIDVector;
+    std::unique_ptr<common::ValueVector> ownedRelIDVector;
+
+    RelDeletionRecord()
+        : WALRecord{WALRecordType::REL_DELETION_RECORD}, tableID{common::INVALID_TABLE_ID},
+          srcNodeIDVector{nullptr}, dstNodeIDVector{nullptr}, relIDVector{nullptr} {}
+    RelDeletionRecord(common::table_id_t tableID, common::ValueVector* srcNodeIDVector,
+        common::ValueVector* dstNodeIDVector, common::ValueVector* relIDVector)
+        : WALRecord{WALRecordType::REL_DELETION_RECORD}, tableID{tableID},
+          srcNodeIDVector{srcNodeIDVector}, dstNodeIDVector{dstNodeIDVector},
+          relIDVector{relIDVector} {}
+    RelDeletionRecord(common::table_id_t tableID,
+        std::unique_ptr<common::ValueVector> srcNodeIDVector,
+        std::unique_ptr<common::ValueVector> dstNodeIDVector,
+        std::unique_ptr<common::ValueVector> relIDVector)
+        : WALRecord{WALRecordType::REL_DELETION_RECORD}, tableID{tableID}, srcNodeIDVector{nullptr},
+          dstNodeIDVector{nullptr}, relIDVector{nullptr},
+          ownedSrcNodeIDVector{std::move(srcNodeIDVector)},
+          ownedDstNodeIDVector{std::move(dstNodeIDVector)},
+          ownedRelIDVector{std::move(relIDVector)} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<RelDeletionRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+};
+
+struct RelDetachDeleteRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::RelDataDirection direction;
+    common::ValueVector* srcNodeIDVector;
+    std::unique_ptr<common::ValueVector> ownedSrcNodeIDVector;
+
+    RelDetachDeleteRecord()
+        : WALRecord{WALRecordType::REL_DETACH_DELETE_RECORD}, tableID{common::INVALID_TABLE_ID},
+          direction{common::RelDataDirection::FWD}, srcNodeIDVector{nullptr} {}
+    RelDetachDeleteRecord(common::table_id_t tableID, common::RelDataDirection direction,
+        common::ValueVector* srcNodeIDVector)
+        : WALRecord{WALRecordType::REL_DETACH_DELETE_RECORD}, tableID{tableID},
+          direction{direction}, srcNodeIDVector{srcNodeIDVector} {}
+    RelDetachDeleteRecord(common::table_id_t tableID, common::RelDataDirection direction,
+        std::unique_ptr<common::ValueVector> srcNodeIDVector)
+        : WALRecord{WALRecordType::REL_DETACH_DELETE_RECORD}, tableID{tableID},
+          direction{direction}, srcNodeIDVector{nullptr},
+          ownedSrcNodeIDVector{std::move(srcNodeIDVector)} {}
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<RelDetachDeleteRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
+};
+
+struct RelUpdateRecord final : WALRecord {
+    common::table_id_t tableID;
+    common::column_id_t columnID;
+    common::ValueVector* srcNodeIDVector;
+    common::ValueVector* dstNodeIDVector;
+    common::ValueVector* relIDVector;
+    common::ValueVector* propertyVector;
+    std::unique_ptr<common::ValueVector> ownedSrcNodeIDVector;
+    std::unique_ptr<common::ValueVector> ownedDstNodeIDVector;
+    std::unique_ptr<common::ValueVector> ownedRelIDVector;
+    std::unique_ptr<common::ValueVector> ownedPropertyVector;
+
+    RelUpdateRecord()
+        : WALRecord{WALRecordType::REL_UPDATE_RECORD}, tableID{common::INVALID_TABLE_ID},
+          columnID{common::INVALID_COLUMN_ID}, srcNodeIDVector{nullptr}, dstNodeIDVector{nullptr},
+          relIDVector{nullptr}, propertyVector{nullptr} {}
+    RelUpdateRecord(common::table_id_t tableID, common::column_id_t columnID,
+        common::ValueVector* srcNodeIDVector, common::ValueVector* dstNodeIDVector,
+        common::ValueVector* relIDVector, common::ValueVector* propertyVector)
+        : WALRecord{WALRecordType::REL_UPDATE_RECORD}, tableID{tableID}, columnID{columnID},
+          srcNodeIDVector{srcNodeIDVector}, dstNodeIDVector{dstNodeIDVector},
+          relIDVector{relIDVector}, propertyVector{propertyVector} {}
+    RelUpdateRecord(common::table_id_t tableID, common::column_id_t columnID,
+        std::unique_ptr<common::ValueVector> srcNodeIDVector,
+        std::unique_ptr<common::ValueVector> dstNodeIDVector,
+        std::unique_ptr<common::ValueVector> relIDVector,
+        std::unique_ptr<common::ValueVector> propertyVector)
+        : WALRecord{WALRecordType::REL_UPDATE_RECORD}, tableID{tableID}, columnID{columnID},
+          srcNodeIDVector{nullptr}, dstNodeIDVector{nullptr}, relIDVector{nullptr},
+          propertyVector{nullptr}, ownedSrcNodeIDVector{std::move(srcNodeIDVector)},
+          ownedDstNodeIDVector{std::move(dstNodeIDVector)},
+          ownedRelIDVector{std::move(relIDVector)}, ownedPropertyVector{std::move(propertyVector)} {
+    }
+
+    void serialize(common::Serializer& serializer) const override;
+    static std::unique_ptr<RelUpdateRecord> deserialize(common::Deserializer& deserializer,
+        const main::ClientContext& clientContext);
 };
 
 } // namespace storage

@@ -1,13 +1,8 @@
 "use strict";
 
-const KuzuNative = require("./kuzujs.node");
+const KuzuNative = require("./kuzu_native.js");
 const QueryResult = require("./query_result.js");
 const PreparedStatement = require("./prepared_statement.js");
-
-const PRIMARY_KEY_TEXT = "(PRIMARY KEY)";
-const SRC_NODE_TEXT = "src node:";
-const DST_NODE_TEXT = "dst node:";
-const PROPERTIES_TEXT = "properties:";
 
 class Connection {
   /**
@@ -17,8 +12,9 @@ class Connection {
    * function on the returned object.
    *
    * @param {kuzu.Database} database the database object to connect to.
+   * @param {Number} numThreads the maximum number of threads to use for query execution.
    */
-  constructor(database) {
+  constructor(database, numThreads = null) {
     if (
       typeof database !== "object" ||
       database.constructor.name !== "Database"
@@ -29,6 +25,11 @@ class Connection {
     this._connection = null;
     this._isInitialized = false;
     this._initPromise = null;
+    this._isClosed = false;
+    numThreads = parseInt(numThreads);
+    if (numThreads && numThreads > 0) {
+      this._numThreads = numThreads;
+    }
   }
 
   /**
@@ -36,6 +37,9 @@ class Connection {
    * connection is initialized automatically when the first query is executed.
    */
   async init() {
+    if (this._isClosed) {
+      throw new Error("Connection is closed.");
+    }
     if (!this._connection) {
       const database = await this._database._getDatabase();
       this._connection = new KuzuNative.NodeConnection(database);
@@ -50,7 +54,9 @@ class Connection {
               this._isInitialized = true;
               if (this._numThreads) {
                 this._connection.setMaxNumThreadForExec(this._numThreads);
-                delete this._numThreads;
+              }
+              if (this._queryTimeout) {
+                this._connection.setQueryTimeout(this._queryTimeout);
               }
               resolve();
             }
@@ -63,10 +69,13 @@ class Connection {
   }
 
   /**
-   * @private Internal function to get the underlying native connection object.
+   * Internal function to get the underlying native connection object.
    * @returns {KuzuNative.NodeConnection} the underlying native connection.
    */
   async _getConnection() {
+    if (this._isClosed) {
+      throw new Error("Connection is closed.");
+    }
     await this.init();
     return this._connection;
   }
@@ -75,9 +84,10 @@ class Connection {
    * Execute a prepared statement with the given parameters.
    * @param {kuzu.PreparedStatement} preparedStatement the prepared statement to execute.
    * @param {Object} params a plain object mapping parameter names to values.
+   * @param {Function} [progressCallback] - Optional callback function that is invoked with the progress of the query execution. The callback receives three arguments: pipelineProgress, numPipelinesFinished, and numPipelines.
    * @returns {Promise<kuzu.QueryResult>} a promise that resolves to the query result. The promise is rejected if there is an error.
    */
-  execute(preparedStatement, params = {}) {
+  execute(preparedStatement, params = {}, progressCallback) {
     return new Promise((resolve, reject) => {
       if (
         !typeof preparedStatement === "object" ||
@@ -98,46 +108,40 @@ class Connection {
       const paramArray = [];
       for (const key in params) {
         const value = params[key];
-        if (value === null || value === undefined) {
-          return reject(
-            new Error(
-              "The value of each parameter must not be null or undefined."
-            )
-          );
-        }
-        if (
-          typeof value === "boolean" ||
-          typeof value === "number" ||
-          typeof value === "string" ||
-          (typeof value === "object" && value.constructor.name === "Date")
-        ) {
-          paramArray.push([key, value]);
-        } else {
-          return reject(
-            new Error(
-              "The value of each parameter must be a boolean, number, string, or Date object."
-            )
-          );
-        }
+        paramArray.push([key, value]);
       }
-      this._getConnection().then((connection) => {
-        const nodeQueryResult = new KuzuNative.NodeQueryResult();
-        try {
-          connection.executeAsync(
-            preparedStatement._preparedStatement,
-            nodeQueryResult,
-            paramArray,
-            (err) => {
-              if (err) {
-                return reject(err);
-              }
-              return resolve(new QueryResult(this, nodeQueryResult));
-            }
-          );
-        } catch (e) {
-          return reject(e);
-        }
-      });
+      if (progressCallback && typeof progressCallback !== "function") {
+        return reject(new Error("progressCallback must be a function."));
+      }
+      this._getConnection()
+        .then((connection) => {
+          const nodeQueryResult = new KuzuNative.NodeQueryResult();
+          try {
+            connection.executeAsync(
+              preparedStatement._preparedStatement,
+              nodeQueryResult,
+              paramArray,
+              (err) => {
+                if (err) {
+                  return reject(err);
+                }
+                this._unwrapMultipleQueryResults(nodeQueryResult)
+                  .then((queryResults) => {
+                    return resolve(queryResults);
+                  })
+                  .catch((err) => {
+                    return reject(err);
+                  });
+              },
+              progressCallback
+            );
+          } catch (e) {
+            return reject(e);
+          }
+        })
+        .catch((err) => {
+          return reject(err);
+        });
     });
   }
 
@@ -151,33 +155,100 @@ class Connection {
       if (typeof statement !== "string") {
         return reject(new Error("statement must be a string."));
       }
-      this._getConnection().then((connection) => {
-        const preparedStatement = new KuzuNative.NodePreparedStatement(
-          connection,
-          statement
-        );
-        preparedStatement.initAsync((err) => {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(new PreparedStatement(this, preparedStatement));
+      this._getConnection()
+        .then((connection) => {
+          const preparedStatement = new KuzuNative.NodePreparedStatement(
+            connection,
+            statement
+          );
+          preparedStatement.initAsync((err) => {
+            if (err) {
+              return reject(err);
+            }
+            return resolve(new PreparedStatement(this, preparedStatement));
+          });
+        })
+        .catch((err) => {
+          return reject(err);
         });
-      });
     });
   }
 
   /**
    * Execute a query.
    * @param {String} statement the statement to execute.
+   * @param {Function} [progressCallback] - Optional callback function that is invoked with the progress of the query execution. The callback receives three arguments: pipelineProgress, numPipelinesFinished, and numPipelines.
    * @returns {Promise<kuzu.QueryResult>} a promise that resolves to the query result. The promise is rejected if there is an error.
    */
-  async query(statement) {
-    if (typeof statement !== "string") {
-      throw new Error("statement must be a string.");
+  query(statement, progressCallback) {
+    return new Promise((resolve, reject) => {
+      if (typeof statement !== "string") {
+        return reject(new Error("statement must be a string."));
+      }
+      if (progressCallback && typeof progressCallback !== "function") {
+        return reject(new Error("progressCallback must be a function."));
+      }
+      this._getConnection()
+        .then((connection) => {
+          const nodeQueryResult = new KuzuNative.NodeQueryResult();
+          try {
+            connection.queryAsync(statement, nodeQueryResult, (err) => {
+              if (err) {
+                return reject(err);
+              }
+              this._unwrapMultipleQueryResults(nodeQueryResult)
+                .then((queryResults) => {
+                  return resolve(queryResults);
+                })
+                .catch((err) => {
+                  return reject(err);
+                });
+            },
+              progressCallback);
+          } catch (e) {
+            return reject(e);
+          }
+        })
+        .catch((err) => {
+          return reject(err);
+        });
+    });
+  }
+
+  /**
+   * Internal function to get the next query result for multiple query results.
+   * @param {KuzuNative.NodeQueryResult} nodeQueryResult the current node query result.
+   * @returns {Promise<kuzu.QueryResult>} a promise that resolves to the next query result. The promise is rejected if there is an error.
+   */
+  _getNextQueryResult(nodeQueryResult) {
+    return new Promise((resolve, reject) => {
+      const nextNodeQueryResult = new KuzuNative.NodeQueryResult();
+      nodeQueryResult.getNextQueryResultAsync(nextNodeQueryResult, (err) => {
+        if (err) {
+          return reject(err);
+        }
+        return resolve(new QueryResult(this, nextNodeQueryResult));
+      });
+    });
+  }
+
+  /**
+   * Internal function to unwrap multiple query results into an array of query results.
+   * @param {KuzuNative.NodeQueryResult} nodeQueryResult the node query result.
+   * @returns {Promise<Array<kuzu.QueryResult>> | kuzu.QueryResult} a promise that resolves to an array of query results. The promise is rejected if there is an error.
+   */
+  async _unwrapMultipleQueryResults(nodeQueryResult) {
+    const wrappedQueryResult = new QueryResult(this, nodeQueryResult);
+    if (!nodeQueryResult.hasNextQueryResult()) {
+      return wrappedQueryResult;
     }
-    const preparedStatement = await this.prepare(statement);
-    const queryResult = await this.execute(preparedStatement);
-    return queryResult;
+    const queryResults = [wrappedQueryResult];
+    let currentQueryResult = nodeQueryResult;
+    while (currentQueryResult.hasNextQueryResult()) {
+      queryResults.push(await this._getNextQueryResult(currentQueryResult));
+      currentQueryResult = queryResults[queryResults.length - 1]._queryResult;
+    }
+    return queryResults;
   }
 
   /**
@@ -190,189 +261,59 @@ class Connection {
     if (typeof numThreads !== "number" || !numThreads || numThreads < 0) {
       throw new Error("numThreads must be a positive number.");
     }
-    if (!this.isInitialized) {
+    if (this._isInitialized) {
       this._connection.setMaxNumThreadForExec(numThreads);
+    } else {
+      this._numThreads = numThreads;
     }
-    this._numThreads = numThreads;
   }
 
   /**
-   * @private Internal function to parse the result for `getNodeTableNames()`.
-   * @param {String} nodeTableNames the result from `getNodeTableNames()`.
-   * @returns {Array<String>} an array of table names.
+   * Set the timeout for queries. Queries that take longer than the timeout
+   * will be aborted.
+   * @param {Number} timeoutInMs the timeout in milliseconds.
    */
-  _parseNodeTableNames(nodeTableNames) {
-    const results = [];
-    nodeTableNames.split("\n").forEach((line, i) => {
-      if (i === 0) {
-        return;
-      }
-      if (line === "") {
-        return;
-      }
-      results.push(line.trim());
-    });
-    return results;
+  setQueryTimeout(timeoutInMs) {
+    if (
+      typeof timeoutInMs !== "number" ||
+      isNaN(timeoutInMs) ||
+      timeoutInMs <= 0
+    ) {
+      throw new Error("timeoutInMs must be a positive number.");
+    }
+    if (this._isInitialized) {
+      this._connection.setQueryTimeout(timeoutInMs);
+    } else {
+      this._queryTimeout = timeoutInMs;
+    }
   }
 
   /**
-   * Get the names of all node tables in the database.
-   * @returns {Promise<Array<String>>} a promise that resolves to an array of table names. The promise is rejected if there is an error.
+   * Close the connection. 
+   * 
+   * Note: Call to this method is optional. The connection will be closed
+   * automatically when the object goes out of scope.
    */
-  getNodeTableNames() {
-    return this._getConnection().then((connection) => {
-      return new Promise((resolve, reject) => {
-        connection.getNodeTableNamesAsync((err, result) => {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(this._parseNodeTableNames(result));
-        });
-      });
-    });
-  }
-
-  /**
-   * @private Internal function to parse the result for `getRelTableNames()`.
-   * @param {String} relTableNames the result from `getRelTableNames()`.
-   * @returns {Array<String>} an array of table names.
-   */
-  _parseRelTableNames(relTableNames) {
-    const results = [];
-    relTableNames.split("\n").forEach((line, i) => {
-      if (i === 0) {
+  async close() {
+    if (this._isClosed) {
+      return;
+    }
+    if (!this._isInitialized) {
+      if (this._initPromise) {
+        // Connection is initializing, wait for it to finish first.
+        await this._initPromise;
+      } else {
+        // Connection is not initialized, simply mark it as closed and initialized.
+        this._isInitialized = true;
+        this._isClosed = true;
+        delete this._connection;
         return;
       }
-      if (line === "") {
-        return;
-      }
-      results.push(line.trim());
-    });
-    return results;
-  }
-
-  /**
-   * Get the names of all relationship tables in the database.
-   * @returns {Promise<Array<String>>} a promise that resolves to an array of table names. The promise is rejected if there is an error.
-   */
-  getRelTableNames() {
-    return this._getConnection().then((connection) => {
-      return new Promise((resolve, reject) => {
-        connection.getRelTableNamesAsync((err, result) => {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(this._parseRelTableNames(result));
-        });
-      });
-    });
-  }
-
-  /**
-   * @private Internal function to parse the result for `getNodePropertyNames()`.
-   * @param {String} nodeTableNames the result from `getNodePropertyNames()`.
-   * @returns {Array<Object>} an array of property names.
-   */
-  _parseNodePropertyNames(nodeTableNames) {
-    const results = [];
-    nodeTableNames.split("\n").forEach((line, i) => {
-      if (i === 0) {
-        return;
-      }
-      if (line === "") {
-        return;
-      }
-      line = line.trim();
-      let isPrimaryKey = false;
-      if (line.includes(PRIMARY_KEY_TEXT)) {
-        isPrimaryKey = true;
-        line = line.replace(PRIMARY_KEY_TEXT, "");
-      }
-      const lineParts = line.split(" ");
-      const name = lineParts[0];
-      const type = lineParts[1];
-      results.push({ name, type, isPrimaryKey });
-    });
-    return results;
-  }
-
-  /**
-   * Get the names and types of all properties in the given node table. Each
-   * property is represented as an object with the following properties:
-   * - `name`: the name of the property.
-   * - `type`: the type of the property.
-   * - `isPrimaryKey`: whether the property is a primary key.
-   * @param {String} tableName the name of the node table.
-   * @returns {Promise<Array<Object>>} a promise that resolves to an array of property names. The promise is rejected if there is an error.
-   */
-  getNodePropertyNames(tableName) {
-    return this._getConnection().then((connection) => {
-      return new Promise((resolve, reject) => {
-        connection.getNodePropertyNamesAsync(tableName, (err, result) => {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(this._parseNodePropertyNames(result));
-        });
-      });
-    });
-  }
-
-  /**
-   * @private Internal function to parse the result for `getRelPropertyNames()`.
-   * @param {String} relTableNames the result from `getRelPropertyNames()`.
-   * @returns {Object} an object representing the properties of the rel table.
-   */
-  _parseRelPropertyNames(relTableNames) {
-    const result = { props: [] };
-    relTableNames.split("\n").forEach((line) => {
-      line = line.trim();
-      if (line === "") {
-        return;
-      }
-      if (line.includes(SRC_NODE_TEXT)) {
-        const lineParts = line.split(SRC_NODE_TEXT);
-        result.src = lineParts[1].trim();
-        result.name = lineParts[0].trim();
-        return;
-      }
-      if (line.includes(DST_NODE_TEXT)) {
-        const lineParts = line.split(DST_NODE_TEXT);
-        result.dst = lineParts[1].trim();
-        return;
-      }
-      if (line.includes(PROPERTIES_TEXT)) {
-        return;
-      }
-      const lineParts = line.split(" ");
-      const name = lineParts[0];
-      const type = lineParts[1];
-      result.props.push({ name, type });
-    });
-    return result;
-  }
-
-  /**
-   * Get the names and types of all properties in the given rel table.
-   * The result is an object with the following properties:
-   * - `name`: the name of the rel table.
-   * - `src`: the name of the source node table.
-   * - `dst`: the name of the destination node table.
-   * - `props`: an array of property names and types.
-   * @param {String} tableName the name of the rel table.
-   * @returns {Promise<Object>} a promise that resolves to an object representing the properties of the rel table. The promise is rejected if there is an error.
-   */
-  getRelPropertyNames(tableName) {
-    return this._getConnection().then((connection) => {
-      return new Promise((resolve, reject) => {
-        connection.getRelPropertyNamesAsync(tableName, (err, result) => {
-          if (err) {
-            return reject(err);
-          }
-          return resolve(this._parseRelPropertyNames(result));
-        });
-      });
-    });
+    }
+    // Connection is initialized, close it.
+    this._connection.close();
+    delete this._connection;
+    this._isClosed = true;
   }
 }
 

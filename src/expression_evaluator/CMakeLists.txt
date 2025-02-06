@@ -1,10 +1,13 @@
 add_library(kuzu_expression_evaluator
         OBJECT
-        base_evaluator.cpp
         case_evaluator.cpp
+        expression_evaluator.cpp
+        expression_evaluator_utils.cpp
+        expression_evaluator_visitor.cpp
         function_evaluator.cpp
+        lambda_evaluator.cpp
         literal_evaluator.cpp
-        node_rel_evaluator.cpp
+        pattern_evaluator.cpp
         path_evaluator.cpp
         reference_evaluator.cpp)
 

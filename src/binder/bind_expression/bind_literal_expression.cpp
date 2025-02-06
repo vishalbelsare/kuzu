@@ -10,31 +10,33 @@ namespace kuzu {
 namespace binder {
 
 std::shared_ptr<Expression> ExpressionBinder::bindLiteralExpression(
-    const ParsedExpression& parsedExpression) {
-    auto& literalExpression = (ParsedLiteralExpression&)parsedExpression;
+    const ParsedExpression& parsedExpression) const {
+    auto& literalExpression = parsedExpression.constCast<ParsedLiteralExpression>();
     auto value = literalExpression.getValue();
-    if (value->isNull()) {
-        return createNullLiteralExpression();
+    if (value.isNull()) {
+        return createNullLiteralExpression(value);
     }
-    return createLiteralExpression(value->copy());
+    return createLiteralExpression(value);
+}
+
+std::shared_ptr<Expression> ExpressionBinder::createLiteralExpression(const Value& value) const {
+    auto uniqueName = binder->getUniqueExpressionName(value.toString());
+    return std::make_unique<LiteralExpression>(value, uniqueName);
 }
 
 std::shared_ptr<Expression> ExpressionBinder::createLiteralExpression(
-    std::unique_ptr<common::Value> value) {
-    auto uniqueName = binder->getUniqueExpressionName(value->toString());
-    return std::make_unique<LiteralExpression>(std::move(value), uniqueName);
+    const std::string& strVal) const {
+    return createLiteralExpression(Value(strVal));
 }
 
-std::shared_ptr<Expression> ExpressionBinder::createStringLiteralExpression(
-    const std::string& strVal) {
-    auto value = std::make_unique<Value>(LogicalType{LogicalTypeID::STRING}, strVal);
-    return createLiteralExpression(std::move(value));
-}
-
-std::shared_ptr<Expression> ExpressionBinder::createNullLiteralExpression() {
-    return make_shared<LiteralExpression>(
-        std::make_unique<common::Value>(common::Value::createNullValue()),
+std::shared_ptr<Expression> ExpressionBinder::createNullLiteralExpression() const {
+    return make_shared<LiteralExpression>(Value::createNullValue(),
         binder->getUniqueExpressionName("NULL"));
+}
+
+std::shared_ptr<Expression> ExpressionBinder::createNullLiteralExpression(
+    const Value& value) const {
+    return make_shared<LiteralExpression>(value, binder->getUniqueExpressionName("NULL"));
 }
 
 } // namespace binder

@@ -1,598 +1,379 @@
 #include "storage/wal_replayer.h"
 
+#include "binder/binder.h"
+#include "catalog/catalog_entry/rel_group_catalog_entry.h"
+#include "catalog/catalog_entry/scalar_macro_catalog_entry.h"
+#include "catalog/catalog_entry/sequence_catalog_entry.h"
+#include "catalog/catalog_entry/table_catalog_entry.h"
+#include "catalog/catalog_entry/type_catalog_entry.h"
+#include "common/file_system/file_info.h"
+#include "common/serializer/buffered_file.h"
+#include "main/client_context.h"
+#include "processor/expression_mapper.h"
+#include "storage/local_storage/local_rel_table.h"
 #include "storage/storage_manager.h"
 #include "storage/storage_utils.h"
-#include "storage/wal_replayer_utils.h"
+#include "storage/store/node_table.h"
+#include "storage/store/rel_table.h"
+#include "storage/wal/wal_record.h"
 
+using namespace kuzu::binder;
 using namespace kuzu::catalog;
 using namespace kuzu::common;
+using namespace kuzu::processor;
+using namespace kuzu::storage;
+using namespace kuzu::transaction;
 
 namespace kuzu {
 namespace storage {
 
-// COMMIT_CHECKPOINT:   isCheckpoint = true,  isRecovering = false
-// ROLLBACK:            isCheckpoint = false, isRecovering = false
-// RECOVERY_CHECKPOINT: isCheckpoint = true,  isRecovering = true
-WALReplayer::WALReplayer(WAL* wal, StorageManager* storageManager, MemoryManager* memoryManager,
-    BufferManager* bufferManager, Catalog* catalog, WALReplayMode replayMode)
-    : isRecovering{replayMode == WALReplayMode::RECOVERY_CHECKPOINT},
-      isCheckpoint{replayMode != WALReplayMode::ROLLBACK}, storageManager{storageManager},
-      bufferManager{bufferManager}, memoryManager{memoryManager}, wal{wal}, catalog{catalog} {
-    init();
+WALReplayer::WALReplayer(main::ClientContext& clientContext) : clientContext{clientContext} {
+    walFilePath = clientContext.getVFSUnsafe()->joinPath(clientContext.getDatabasePath(),
+        StorageConstants::WAL_FILE_SUFFIX);
+    pageBuffer = std::make_unique<uint8_t[]>(KUZU_PAGE_SIZE);
 }
 
-void WALReplayer::init() {
-    walFileHandle = wal->fileHandle;
-    pageBuffer = std::make_unique<uint8_t[]>(BufferPoolConstants::PAGE_4KB_SIZE);
-}
-
-void WALReplayer::replay() {
-    // Note: We assume no other thread is accessing the wal during the following operations.
-    // If this assumption no longer holds, we need to lock the wal.
-    if (!isRecovering && isCheckpoint && !wal->isLastLoggedRecordCommit()) {
-        throw StorageException(
-            "Cannot checkpointInMemory WAL because last logged record is not a commit record.");
-    }
-    if (!wal->isEmptyWAL()) {
-        auto walIterator = wal->getIterator();
-        WALRecord walRecord;
-        while (walIterator->hasNextRecord()) {
-            walIterator->getNextRecord(walRecord);
-            replayWALRecord(walRecord);
-        }
-    }
-
-    // We next perform an in-memory checkpointing or rolling back of node/relTables.
-    if (!wal->updatedNodeTables.empty() || !wal->updatedRelTables.empty()) {
-        if (isCheckpoint) {
-            storageManager->checkpointInMemory();
-        } else {
-            storageManager->rollbackInMemory();
-        }
-    }
-}
-
-void WALReplayer::replayWALRecord(WALRecord& walRecord) {
-    switch (walRecord.recordType) {
-    case WALRecordType::PAGE_UPDATE_OR_INSERT_RECORD: {
-        replayPageUpdateOrInsertRecord(walRecord);
-    } break;
-    case WALRecordType::TABLE_STATISTICS_RECORD: {
-        replayTableStatisticsRecord(walRecord);
-    } break;
-    case WALRecordType::COMMIT_RECORD: {
-    } break;
-    case WALRecordType::CATALOG_RECORD: {
-        replayCatalogRecord();
-    } break;
-    case WALRecordType::NODE_TABLE_RECORD: {
-        replayNodeTableRecord(walRecord);
-    } break;
-    case WALRecordType::REL_TABLE_RECORD: {
-        replayRelTableRecord(walRecord);
-    } break;
-    case WALRecordType::OVERFLOW_FILE_NEXT_BYTE_POS_RECORD: {
-        replayOverflowFileNextBytePosRecord(walRecord);
-    } break;
-    case WALRecordType::COPY_NODE_RECORD: {
-        replayCopyNodeRecord(walRecord);
-    } break;
-    case WALRecordType::COPY_REL_RECORD: {
-        replayCopyRelRecord(walRecord);
-    } break;
-    case WALRecordType::DROP_TABLE_RECORD: {
-        replayDropTableRecord(walRecord);
-    } break;
-    case WALRecordType::DROP_PROPERTY_RECORD: {
-        replayDropPropertyRecord(walRecord);
-    } break;
-    case WALRecordType::ADD_PROPERTY_RECORD: {
-        replayAddPropertyRecord(walRecord);
-    } break;
-    default:
-        throw RuntimeException(
-            "Unrecognized WAL record type inside WALReplayer::replay. recordType: " +
-            walRecordTypeToString(walRecord.recordType));
-    }
-}
-
-void WALReplayer::replayPageUpdateOrInsertRecord(const kuzu::storage::WALRecord& walRecord) {
-    // 1. As the first step we copy over the page on disk, regardless of if we are recovering
-    // (and checkpointing) or checkpointing while during regular execution.
-    auto storageStructureID = walRecord.pageInsertOrUpdateRecord.storageStructureID;
-    std::unique_ptr<FileInfo> fileInfoOfStorageStructure =
-        StorageUtils::getFileInfoForReadWrite(wal->getDirectory(), storageStructureID);
-    if (isCheckpoint) {
-        if (!wal->isLastLoggedRecordCommit()) {
-            // Nothing to undo.
-            return;
-        }
-        walFileHandle->readPage(pageBuffer.get(), walRecord.pageInsertOrUpdateRecord.pageIdxInWAL);
-        FileUtils::writeToFile(fileInfoOfStorageStructure.get(), pageBuffer.get(),
-            BufferPoolConstants::PAGE_4KB_SIZE,
-            walRecord.pageInsertOrUpdateRecord.pageIdxInOriginalFile *
-                BufferPoolConstants::PAGE_4KB_SIZE);
-    }
-    if (!isRecovering) {
-        // 2: If we are not recovering, we do any in-memory checkpointing or rolling back work
-        // to make sure that the system's in-memory structures are consistent with what is on
-        // disk. For example, we update the BM's image of the pages or InMemDiskArrays used by
-        // lists or the WALVersion pageIdxs of pages for VersionedFileHandles.
-        checkpointOrRollbackVersionedFileHandleAndBufferManager(walRecord, storageStructureID);
-    }
-}
-
-void WALReplayer::replayTableStatisticsRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        if (walRecord.tableStatisticsRecord.isNodeTable) {
-            StorageUtils::overwriteNodesStatisticsAndDeletedIDsFileWithVersionFromWAL(
-                wal->getDirectory());
-            if (!isRecovering) {
-                storageManager->getNodesStore()
-                    .getNodesStatisticsAndDeletedIDs()
-                    .checkpointInMemoryIfNecessary();
-            }
-        } else {
-            StorageUtils::overwriteRelsStatisticsFileWithVersionFromWAL(wal->getDirectory());
-            if (!isRecovering) {
-                storageManager->getRelsStore().getRelsStatistics().checkpointInMemoryIfNecessary();
-            }
-        }
-    } else {
-        storageManager->getNodesStore()
-            .getNodesStatisticsAndDeletedIDs()
-            .rollbackInMemoryIfNecessary();
-    }
-}
-
-void WALReplayer::replayCatalogRecord() {
-    if (isCheckpoint) {
-        StorageUtils::overwriteCatalogFileWithVersionFromWAL(wal->getDirectory());
-        if (!isRecovering) {
-            storageManager->getCatalog()->checkpointInMemory();
-        }
-    } else {
-        // Since DDL statements are single statements that are auto committed, it is impossible
-        // for users to roll back a DDL statement.
-    }
-}
-
-void WALReplayer::replayNodeTableRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        // Since we log the NODE_TABLE_RECORD prior to logging CATALOG_RECORD, the catalog
-        // file has not recovered yet. Thus, the catalog needs to read the catalog file for WAL
-        // record.
-        auto catalogForCheckpointing = getCatalogForRecovery(DBFileType::WAL_VERSION);
-        WALReplayerUtils::createEmptyDBFilesForNewNodeTable(
-            catalogForCheckpointing->getReadOnlyVersion()->getNodeTableSchema(
-                walRecord.nodeTableRecord.tableID),
-            wal->getDirectory());
-        if (!isRecovering) {
-            // If we are not recovering, i.e., we are checkpointing during normal execution,
-            // then we need to create the NodeTable object for the newly created node table.
-            // Therefore, this effectively fixes the in-memory data structures (i.e., performs
-            // the in-memory checkpointing).
-            storageManager->getNodesStore().createNodeTable(
-                walRecord.nodeTableRecord.tableID, bufferManager, catalogForCheckpointing.get());
-        }
-    } else {
-        // Since DDL statements are single statements that are auto committed, it is
-        // impossible for users to roll back a DDL statement.
-    }
-}
-
-void WALReplayer::replayRelTableRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        // See comments for NODE_TABLE_RECORD.
-        auto nodesStatisticsAndDeletedIDsForCheckPointing =
-            std::make_unique<NodesStatisticsAndDeletedIDs>(wal->getDirectory());
-        auto maxNodeOffsetPerTable =
-            nodesStatisticsAndDeletedIDsForCheckPointing->getMaxNodeOffsetPerTable();
-        auto catalogForCheckpointing = getCatalogForRecovery(DBFileType::WAL_VERSION);
-        WALReplayerUtils::createEmptyDBFilesForNewRelTable(
-            catalogForCheckpointing->getReadOnlyVersion()->getRelTableSchema(
-                walRecord.relTableRecord.tableID),
-            wal->getDirectory(), maxNodeOffsetPerTable);
-        if (!isRecovering) {
-            // See comments for NODE_TABLE_RECORD.
-            storageManager->getRelsStore().createRelTable(
-                walRecord.relTableRecord.tableID, catalogForCheckpointing.get(), memoryManager);
-            storageManager->getNodesStore().getNodesStatisticsAndDeletedIDs().setAdjListsAndColumns(
-                &storageManager->getRelsStore());
-        }
-    } else {
-        // See comments for NODE_TABLE_RECORD.
-    }
-}
-
-void WALReplayer::replayOverflowFileNextBytePosRecord(const kuzu::storage::WALRecord& walRecord) {
-    // If we are recovering we do not replay OVERFLOW_FILE_NEXT_BYTE_POS_RECORD because
-    // this record is intended for rolling back a transaction to ensure that we can
-    // recover the overflow space allocated for the write transaction by calling
-    // DiskOverflowFile::resetNextBytePosToWriteTo(...). However during recovery, storageManager
-    // is null, so we cannot construct this value.
-    if (isRecovering) {
+void WALReplayer::replay() const {
+    if (!clientContext.getVFSUnsafe()->fileOrPathExists(walFilePath, &clientContext)) {
         return;
     }
-    assert(walRecord.diskOverflowFileNextBytePosRecord.storageStructureID.isOverflow);
-    auto storageStructureID = walRecord.diskOverflowFileNextBytePosRecord.storageStructureID;
-    DiskOverflowFile* diskOverflowFile;
-    switch (storageStructureID.storageStructureType) {
-    case StorageStructureType::COLUMN: {
-        switch (storageStructureID.columnFileID.columnType) {
-        case ColumnType::NODE_PROPERTY_COLUMN: {
-            Column* column = storageManager->getNodesStore().getNodePropertyColumn(
-                storageStructureID.columnFileID.nodePropertyColumnID.tableID,
-                storageStructureID.columnFileID.nodePropertyColumnID.propertyID);
-            diskOverflowFile =
-                reinterpret_cast<PropertyColumnWithOverflow*>(column)->getDiskOverflowFile();
-        } break;
-        case ColumnType::REL_PROPERTY_COLUMN: {
-            auto& relNodeTableAndDir =
-                storageStructureID.columnFileID.relPropertyColumnID.relNodeTableAndDir;
-            Column* column = storageManager->getRelsStore().getRelPropertyColumn(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID,
-                storageStructureID.columnFileID.relPropertyColumnID.propertyID);
-            diskOverflowFile =
-                reinterpret_cast<PropertyColumnWithOverflow*>(column)->getDiskOverflowFile();
-        } break;
-        default:
-            throw RuntimeException("AdjColumn shouldn't have OVERFLOW_FILE_NEXT_BYTE_POS_RECORD.");
+    auto fileInfo = clientContext.getVFSUnsafe()->openFile(walFilePath, FileFlags::READ_ONLY);
+    const auto walFileSize = fileInfo->getFileSize();
+    // Check if the wal file is empty or corrupted. so nothing to read.
+    if (walFileSize == 0) {
+        return;
+    }
+    try {
+        Deserializer deserializer(std::make_unique<BufferedFileReader>(std::move(fileInfo)));
+        while (!deserializer.finished()) {
+            auto walRecord = WALRecord::deserialize(deserializer, clientContext);
+            replayWALRecord(*walRecord);
         }
-    } break;
-    case StorageStructureType::LISTS: {
-        switch (storageStructureID.listFileID.listType) {
-        case ListType::REL_PROPERTY_LISTS: {
-            auto& relNodeTableAndDir =
-                storageStructureID.listFileID.relPropertyListID.relNodeTableAndDir;
-            auto relPropertyLists = storageManager->getRelsStore().getRelPropertyLists(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID,
-                storageStructureID.listFileID.relPropertyListID.propertyID);
-            diskOverflowFile = &((PropertyListsWithOverflow*)relPropertyLists)->diskOverflowFile;
-        } break;
-        default:
-            assert(storageStructureID.listFileID.listFileType == ListFileType::BASE_LISTS);
-            throw RuntimeException("AdjLists shouldn't have OVERFLOW_FILE_NEXT_BYTE_POS_RECORD.");
+        if (clientContext.getTransactionContext()->hasActiveTransaction()) {
+            // Handle the case that either the last transaction is not committed or the wal file is
+            // corrupted and there is no COMMIT record for the last transaction. We should rollback
+            // under this case, and clear the WAL file.
+            clientContext.getTransactionContext()->rollback();
+            clientContext.getStorageManager()->getWAL().clearWAL();
         }
-    } break;
-    case StorageStructureType::NODE_INDEX: {
-        auto index =
-            storageManager->getNodesStore().getPKIndex(storageStructureID.nodeIndexID.tableID);
-        diskOverflowFile = index->getDiskOverflowFile();
-    } break;
-    default:
+    } catch (const Exception& e) {
+        if (clientContext.getTransactionContext()->hasActiveTransaction()) {
+            // Handle the case that some transaction went during replaying. We should rollback
+            // under this case.
+            clientContext.getTransactionContext()->rollback();
+        }
         throw RuntimeException(
-            "Unsupported storageStructureType " +
-            storageStructureTypeToString(storageStructureID.storageStructureType) +
-            " for OVERFLOW_FILE_NEXT_BYTE_POS_RECORD.");
-    }
-    // Reset NextBytePosToWriteTo if we are rolling back.
-    if (!isCheckpoint) {
-        diskOverflowFile->resetNextBytePosToWriteTo(
-            walRecord.diskOverflowFileNextBytePosRecord.prevNextBytePosToWriteTo);
-    }
-    diskOverflowFile->resetLoggedNewOverflowFileNextBytePosRecord();
-}
-
-void WALReplayer::replayCopyNodeRecord(const kuzu::storage::WALRecord& walRecord) {
-    auto tableID = walRecord.copyNodeRecord.tableID;
-    if (isCheckpoint) {
-        if (!isRecovering) {
-            // CHECKPOINT.
-            // If we are not recovering, i.e., we are checkpointing during normal execution,
-            // then we need to update the nodeTable because the actual columns and lists
-            // files have been changed during checkpoint. So the in memory
-            // fileHandles are obsolete and should be reconstructed (e.g. since the numPages
-            // have likely changed they need to reconstruct their page locks).
-            auto nodeTableSchema = catalog->getReadOnlyVersion()->getNodeTableSchema(tableID);
-            auto relTableSchemas = catalog->getAllRelTableSchemasContainBoundTable(tableID);
-            storageManager->getNodesStore().getNodeTable(tableID)->initializeData(nodeTableSchema);
-            for (auto relTableSchema : relTableSchemas) {
-                storageManager->getRelsStore()
-                    .getRelTable(relTableSchema->tableID)
-                    ->initializeData(relTableSchema);
-            }
-        } else {
-            // RECOVERY.
-            if (wal->isLastLoggedRecordCommit()) {
-                return;
-            }
-            auto catalogForRecovery = getCatalogForRecovery(DBFileType::ORIGINAL);
-            WALReplayerUtils::createEmptyDBFilesForNewNodeTable(
-                catalogForRecovery->getReadOnlyVersion()->getNodeTableSchema(tableID),
-                wal->getDirectory());
-        }
-    } else {
-        // ROLLBACK.
-        WALReplayerUtils::createEmptyDBFilesForNewNodeTable(
-            catalog->getReadOnlyVersion()->getNodeTableSchema(tableID), wal->getDirectory());
+            stringFormat("Failed to replay wal record from WAL file. Error: {}", e.what()));
     }
 }
 
-void WALReplayer::replayCopyRelRecord(const kuzu::storage::WALRecord& walRecord) {
-    auto tableID = walRecord.copyRelRecord.tableID;
-    if (isCheckpoint) {
-        if (!isRecovering) {
-            // CHECKPOINT.
-            storageManager->getRelsStore().getRelTable(tableID)->resetColumnsAndLists(
-                catalog->getReadOnlyVersion()->getRelTableSchema(tableID));
-            // See comments for COPY_NODE_RECORD.
-            storageManager->getRelsStore().getRelTable(tableID)->initializeData(
-                catalog->getReadOnlyVersion()->getRelTableSchema(tableID));
-            storageManager->getNodesStore().getNodesStatisticsAndDeletedIDs().setAdjListsAndColumns(
-                &storageManager->getRelsStore());
-        } else {
-            // RECOVERY.
-            if (wal->isLastLoggedRecordCommit()) {
-                return;
-            }
-            auto nodesStatisticsAndDeletedIDsForCheckPointing =
-                std::make_unique<NodesStatisticsAndDeletedIDs>(wal->getDirectory());
-            auto maxNodeOffsetPerTable =
-                nodesStatisticsAndDeletedIDsForCheckPointing->getMaxNodeOffsetPerTable();
-            auto catalogForRecovery = getCatalogForRecovery(DBFileType::ORIGINAL);
-            WALReplayerUtils::createEmptyDBFilesForNewRelTable(
-                catalogForRecovery->getReadOnlyVersion()->getRelTableSchema(tableID),
-                wal->getDirectory(), maxNodeOffsetPerTable);
-        }
-    } else {
-        // ROLLBACK.
-        WALReplayerUtils::createEmptyDBFilesForNewRelTable(
-            catalog->getReadOnlyVersion()->getRelTableSchema(walRecord.relTableRecord.tableID),
-            wal->getDirectory(),
-            storageManager->getNodesStore()
-                .getNodesStatisticsAndDeletedIDs()
-                .getMaxNodeOffsetPerTable());
-    }
-}
-
-void WALReplayer::replayDropTableRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        auto tableID = walRecord.dropTableRecord.tableID;
-        if (!isRecovering) {
-            if (catalog->getReadOnlyVersion()->containNodeTable(tableID)) {
-                storageManager->getNodesStore().removeNodeTable(tableID);
-                WALReplayerUtils::removeDBFilesForNodeTable(
-                    catalog->getReadOnlyVersion()->getNodeTableSchema(tableID),
-                    wal->getDirectory());
-            } else {
-                storageManager->getRelsStore().removeRelTable(tableID);
-                WALReplayerUtils::removeDBFilesForRelTable(
-                    catalog->getReadOnlyVersion()->getRelTableSchema(tableID), wal->getDirectory());
-            }
-        } else {
-            if (!wal->isLastLoggedRecordCommit()) {
-                // Nothing to undo.
-                return;
-            }
-            auto catalogForRecovery = getCatalogForRecovery(DBFileType::ORIGINAL);
-            if (catalogForRecovery->getReadOnlyVersion()->containNodeTable(tableID)) {
-                WALReplayerUtils::removeDBFilesForNodeTable(
-                    catalogForRecovery->getReadOnlyVersion()->getNodeTableSchema(tableID),
-                    wal->getDirectory());
-            } else {
-                WALReplayerUtils::removeDBFilesForRelTable(
-                    catalogForRecovery->getReadOnlyVersion()->getRelTableSchema(tableID),
-                    wal->getDirectory());
-            }
-        }
-    } else {
-        // See comments for COPY_NODE_RECORD.
-    }
-}
-
-void WALReplayer::replayDropPropertyRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        auto tableID = walRecord.dropPropertyRecord.tableID;
-        auto propertyID = walRecord.dropPropertyRecord.propertyID;
-        if (!isRecovering) {
-            if (catalog->getReadOnlyVersion()->containNodeTable(tableID)) {
-                storageManager->getNodesStore().getNodeTable(tableID)->removeProperty(propertyID);
-                WALReplayerUtils::removeDBFilesForNodeProperty(
-                    wal->getDirectory(), tableID, propertyID);
-            } else {
-                storageManager->getRelsStore().getRelTable(tableID)->removeProperty(
-                    propertyID, *catalog->getReadOnlyVersion()->getRelTableSchema(tableID));
-                WALReplayerUtils::removeDBFilesForRelProperty(wal->getDirectory(),
-                    catalog->getReadOnlyVersion()->getRelTableSchema(tableID), propertyID);
-            }
-        } else {
-            if (!wal->isLastLoggedRecordCommit()) {
-                // Nothing to undo.
-                return;
-            }
-            auto catalogForRecovery = getCatalogForRecovery(DBFileType::WAL_VERSION);
-            if (catalogForRecovery->getReadOnlyVersion()->containNodeTable(tableID)) {
-                WALReplayerUtils::removeDBFilesForNodeProperty(
-                    wal->getDirectory(), tableID, propertyID);
-            } else {
-                WALReplayerUtils::removeDBFilesForRelProperty(wal->getDirectory(),
-                    catalogForRecovery->getReadOnlyVersion()->getRelTableSchema(tableID),
-                    propertyID);
-            }
-        }
-    } else {
-        // See comments for COPY_NODE_RECORD.
-    }
-}
-
-void WALReplayer::replayAddPropertyRecord(const kuzu::storage::WALRecord& walRecord) {
-    if (isCheckpoint) {
-        auto tableID = walRecord.addPropertyRecord.tableID;
-        auto propertyID = walRecord.addPropertyRecord.propertyID;
-        if (!isRecovering) {
-            auto tableSchema = catalog->getWriteVersion()->getTableSchema(tableID);
-            auto property = tableSchema->getProperty(propertyID);
-            if (catalog->getReadOnlyVersion()->containNodeTable(tableID)) {
-                WALReplayerUtils::renameDBFilesForNodeProperty(
-                    wal->getDirectory(), tableID, propertyID);
-                storageManager->getNodesStore().getNodeTable(tableID)->addProperty(property);
-            } else {
-                WALReplayerUtils::renameDBFilesForRelProperty(wal->getDirectory(),
-                    reinterpret_cast<RelTableSchema*>(tableSchema), propertyID);
-                storageManager->getRelsStore().getRelTable(tableID)->addProperty(
-                    property, *reinterpret_cast<RelTableSchema*>(tableSchema));
-            }
-        } else {
-            if (!wal->isLastLoggedRecordCommit()) {
-                // Nothing to undo.
-                return;
-            }
-            auto catalogForRecovery = getCatalogForRecovery(DBFileType::WAL_VERSION);
-            auto tableSchema = catalogForRecovery->getReadOnlyVersion()->getTableSchema(tableID);
-            if (catalogForRecovery->getReadOnlyVersion()->containNodeTable(tableID)) {
-                WALReplayerUtils::renameDBFilesForNodeProperty(
-                    wal->getDirectory(), tableID, propertyID);
-            } else {
-                WALReplayerUtils::renameDBFilesForRelProperty(wal->getDirectory(),
-                    reinterpret_cast<RelTableSchema*>(tableSchema), propertyID);
-            }
-        }
-    } else {
-        // See comments for COPY_NODE_RECORD.
-    }
-}
-
-void WALReplayer::truncateFileIfInsertion(
-    BMFileHandle* fileHandle, const PageUpdateOrInsertRecord& pageInsertOrUpdateRecord) {
-    if (pageInsertOrUpdateRecord.isInsert) {
-        // If we are rolling back and this is a page insertion we truncate the fileHandle's
-        // data structures that hold locks for pageIdxs.
-        // Note: We can directly call removePageIdxAndTruncateIfNecessary here because we
-        // assume there is a single write transaction in the system at any point in time.
-        // Suppose page 5 and page 6 were added to a file during a transaction, which is now
-        // rolling back. As we replay the log to rollback, we see page 5's insertion first.
-        // However, we can directly truncate the file to 5 (even if later we will see a page
-        // 6 insertion), because we assume that if there were further new page additions to
-        // the same file, they must also be part of the rolling back transaction. If this
-        // assumption fails, instead of truncating, we need to indicate that page 5 is a
-        // "free" page again and have some logic to maintain free pages.
-        fileHandle->removePageIdxAndTruncateIfNecessary(
-            pageInsertOrUpdateRecord.pageIdxInOriginalFile);
-    }
-}
-
-void WALReplayer::checkpointOrRollbackVersionedFileHandleAndBufferManager(
-    const WALRecord& walRecord, const StorageStructureID& storageStructureID) {
-    BMFileHandle* fileHandle =
-        getVersionedFileHandleIfWALVersionAndBMShouldBeCleared(storageStructureID);
-    if (fileHandle) {
-        fileHandle->clearWALPageIdxIfNecessary(
-            walRecord.pageInsertOrUpdateRecord.pageIdxInOriginalFile);
-        if (isCheckpoint) {
-            // Update the page in buffer manager if it is in a frame. Note that we assume
-            // that the pageBuffer currently contains the contents of the WALVersion, so the
-            // caller needs to make sure that this assumption holds.
-            bufferManager->updateFrameIfPageIsInFrameWithoutLock(*fileHandle, pageBuffer.get(),
-                walRecord.pageInsertOrUpdateRecord.pageIdxInOriginalFile);
-        } else {
-            truncateFileIfInsertion(fileHandle, walRecord.pageInsertOrUpdateRecord);
-        }
-    }
-}
-
-BMFileHandle* WALReplayer::getVersionedFileHandleIfWALVersionAndBMShouldBeCleared(
-    const StorageStructureID& storageStructureID) {
-    switch (storageStructureID.storageStructureType) {
-    case StorageStructureType::COLUMN: {
-        switch (storageStructureID.columnFileID.columnType) {
-        case ColumnType::NODE_PROPERTY_COLUMN: {
-            Column* column = storageManager->getNodesStore().getNodePropertyColumn(
-                storageStructureID.columnFileID.nodePropertyColumnID.tableID,
-                storageStructureID.columnFileID.nodePropertyColumnID.propertyID);
-            if (storageStructureID.isOverflow) {
-                return reinterpret_cast<PropertyColumnWithOverflow*>(column)
-                    ->getDiskOverflowFileHandle();
-            } else if (storageStructureID.isNullBits) {
-                return column->getNullColumn()->getFileHandle();
-            } else {
-                return column->getFileHandle();
-            }
-        }
-        case ColumnType::ADJ_COLUMN: {
-            auto& relNodeTableAndDir =
-                storageStructureID.columnFileID.adjColumnID.relNodeTableAndDir;
-            Column* column = storageManager->getRelsStore().getAdjColumn(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID);
-            assert(storageStructureID.isOverflow == false);
-            if (storageStructureID.isNullBits) {
-                return column->getNullColumn()->getFileHandle();
-            }
-            return column->getFileHandle();
-        }
-        case ColumnType::REL_PROPERTY_COLUMN: {
-            auto& relNodeTableAndDir =
-                storageStructureID.columnFileID.relPropertyColumnID.relNodeTableAndDir;
-            Column* column = storageManager->getRelsStore().getRelPropertyColumn(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID,
-                storageStructureID.columnFileID.relPropertyColumnID.propertyID);
-            if (storageStructureID.isOverflow) {
-                return reinterpret_cast<PropertyColumnWithOverflow*>(column)
-                    ->getDiskOverflowFileHandle();
-            } else if (storageStructureID.isNullBits) {
-                return column->getNullColumn()->getFileHandle();
-            } else {
-                return column->getFileHandle();
-            }
-        }
-        default: {
-            assert(false);
-        }
-        }
-    }
-    case StorageStructureType::LISTS: {
-        switch (storageStructureID.listFileID.listType) {
-        case ListType::ADJ_LISTS: {
-            auto& relNodeTableAndDir = storageStructureID.listFileID.adjListsID.relNodeTableAndDir;
-            auto adjLists = storageManager->getRelsStore().getAdjLists(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID);
-            switch (storageStructureID.listFileID.listFileType) {
-            case ListFileType::BASE_LISTS: {
-                return adjLists->getFileHandle();
-            }
-            default:
-                return nullptr;
-            }
-        }
-        case ListType::REL_PROPERTY_LISTS: {
-            auto& relNodeTableAndDir =
-                storageStructureID.listFileID.relPropertyListID.relNodeTableAndDir;
-            auto relPropLists = storageManager->getRelsStore().getRelPropertyLists(
-                relNodeTableAndDir.dir, relNodeTableAndDir.relTableID,
-                storageStructureID.listFileID.relPropertyListID.propertyID);
-            switch (storageStructureID.listFileID.listFileType) {
-            case ListFileType::BASE_LISTS: {
-                return storageStructureID.isOverflow ? ((PropertyListsWithOverflow*)relPropLists)
-                                                           ->diskOverflowFile.getFileHandle() :
-                                                       relPropLists->getFileHandle();
-            }
-            default:
-                return nullptr;
-            }
-        }
-        default: {
-            assert(false);
-        }
-        }
-    }
-    case StorageStructureType::NODE_INDEX: {
-        auto index =
-            storageManager->getNodesStore().getPKIndex(storageStructureID.nodeIndexID.tableID);
-        return storageStructureID.isOverflow ? index->getDiskOverflowFile()->getFileHandle() :
-                                               index->getFileHandle();
+void WALReplayer::replayWALRecord(const WALRecord& walRecord) const {
+    switch (walRecord.type) {
+    case WALRecordType::BEGIN_TRANSACTION_RECORD: {
+        clientContext.getTransactionContext()->beginRecoveryTransaction();
+    } break;
+    case WALRecordType::COMMIT_RECORD: {
+        clientContext.getTransactionContext()->commit();
+    } break;
+    case WALRecordType::ROLLBACK_RECORD: {
+        clientContext.getTransactionContext()->rollback();
+    } break;
+    case WALRecordType::CREATE_CATALOG_ENTRY_RECORD: {
+        replayCreateCatalogEntryRecord(walRecord);
+    } break;
+    case WALRecordType::DROP_CATALOG_ENTRY_RECORD: {
+        replayDropCatalogEntryRecord(walRecord);
+    } break;
+    case WALRecordType::TABLE_INSERTION_RECORD: {
+        replayTableInsertionRecord(walRecord);
+    } break;
+    case WALRecordType::NODE_DELETION_RECORD: {
+        replayNodeDeletionRecord(walRecord);
+    } break;
+    case WALRecordType::NODE_UDPATE_RECORD: {
+        replayNodeUpdateRecord(walRecord);
+    } break;
+    case WALRecordType::REL_DELETION_RECORD: {
+        replayRelDeletionRecord(walRecord);
+    } break;
+    case WALRecordType::REL_DETACH_DELETE_RECORD: {
+        replayRelDetachDeletionRecord(walRecord);
+    } break;
+    case WALRecordType::REL_UPDATE_RECORD: {
+        replayRelUpdateRecord(walRecord);
+    } break;
+    case WALRecordType::COPY_TABLE_RECORD: {
+        replayCopyTableRecord(walRecord);
+    } break;
+    case WALRecordType::ALTER_TABLE_ENTRY_RECORD: {
+        replayAlterTableEntryRecord(walRecord);
+    } break;
+    case WALRecordType::UPDATE_SEQUENCE_RECORD: {
+        replayUpdateSequenceRecord(walRecord);
+    } break;
+    case WALRecordType::CHECKPOINT_RECORD: {
+        // This record should not be replayed. It is only used to indicate that the previous records
+        // had been replayed and shadow files are created.
+        KU_UNREACHABLE;
     }
     default:
-        assert(false);
+        KU_UNREACHABLE;
     }
 }
 
-std::unique_ptr<Catalog> WALReplayer::getCatalogForRecovery(DBFileType dbFileType) {
-    // When we are recovering our database, the catalog field of walReplayer has not been
-    // initialized and recovered yet. We need to create a new catalog to get node/rel tableSchemas
-    // for recovering.
-    auto catalogForRecovery = std::make_unique<Catalog>(wal);
-    catalogForRecovery->getReadOnlyVersion()->readFromFile(wal->getDirectory(), dbFileType);
-    return catalogForRecovery;
+void WALReplayer::replayCreateCatalogEntryRecord(const WALRecord& walRecord) const {
+    auto catalog = clientContext.getCatalog();
+    auto transaction = clientContext.getTransaction();
+    auto storageManager = clientContext.getStorageManager();
+    auto& record = walRecord.constCast<CreateCatalogEntryRecord>();
+    switch (record.ownedCatalogEntry->getType()) {
+    case CatalogEntryType::NODE_TABLE_ENTRY: {
+        auto& entry = record.ownedCatalogEntry->constCast<TableCatalogEntry>();
+        auto newEntry = catalog->createTableEntry(transaction,
+            entry.getBoundCreateTableInfo(transaction, record.isInternal));
+        storageManager->createTable(newEntry, &clientContext);
+    } break;
+    case CatalogEntryType::REL_TABLE_ENTRY: {
+        auto& entry = record.ownedCatalogEntry->constCast<TableCatalogEntry>();
+        auto newEntry = catalog->createTableEntry(transaction,
+            entry.getBoundCreateTableInfo(transaction, record.isInternal));
+        storageManager->createTable(newEntry, &clientContext);
+    } break;
+    case CatalogEntryType::REL_GROUP_ENTRY: {
+        auto& entry = record.ownedCatalogEntry->constCast<RelGroupCatalogEntry>();
+        auto newEntry = catalog->createRelGroupEntry(transaction,
+            entry.getBoundCreateTableInfo(transaction, catalog, record.isInternal));
+        storageManager->createTable(newEntry, &clientContext);
+    } break;
+    case CatalogEntryType::SCALAR_MACRO_ENTRY: {
+        auto& macroEntry = record.ownedCatalogEntry->constCast<ScalarMacroCatalogEntry>();
+        catalog->addScalarMacroFunction(transaction, macroEntry.getName(),
+            macroEntry.getMacroFunction()->copy());
+    } break;
+    case CatalogEntryType::SEQUENCE_ENTRY: {
+        auto& sequenceEntry = record.ownedCatalogEntry->constCast<SequenceCatalogEntry>();
+        catalog->createSequence(transaction,
+            sequenceEntry.getBoundCreateSequenceInfo(record.isInternal));
+    } break;
+    case CatalogEntryType::TYPE_ENTRY: {
+        auto& typeEntry = record.ownedCatalogEntry->constCast<TypeCatalogEntry>();
+        catalog->createType(transaction, typeEntry.getName(), typeEntry.getLogicalType().copy());
+    } break;
+    default: {
+        KU_UNREACHABLE;
+    }
+    }
+}
+
+void WALReplayer::replayDropCatalogEntryRecord(const WALRecord& walRecord) const {
+    auto& dropEntryRecord = walRecord.constCast<DropCatalogEntryRecord>();
+    auto catalog = clientContext.getCatalog();
+    auto transaction = clientContext.getTransaction();
+    const auto entryID = dropEntryRecord.entryID;
+    switch (dropEntryRecord.entryType) {
+    case CatalogEntryType::NODE_TABLE_ENTRY:
+    case CatalogEntryType::REL_TABLE_ENTRY: {
+        KU_ASSERT(clientContext.getCatalog());
+        catalog->dropTableEntry(transaction, entryID);
+    } break;
+    case CatalogEntryType::REL_GROUP_ENTRY: {
+        catalog->dropRelGroupEntry(transaction, entryID);
+    } break;
+    case CatalogEntryType::SEQUENCE_ENTRY: {
+        catalog->dropSequence(transaction, entryID);
+    } break;
+    default: {
+        KU_UNREACHABLE;
+    }
+    }
+}
+
+void WALReplayer::replayAlterTableEntryRecord(const WALRecord& walRecord) const {
+    auto binder = Binder(&clientContext);
+    auto& alterEntryRecord = walRecord.constCast<AlterTableEntryRecord>();
+    clientContext.getCatalog()->alterTableEntry(clientContext.getTransaction(),
+        *alterEntryRecord.ownedAlterInfo);
+    if (alterEntryRecord.ownedAlterInfo->alterType == AlterType::ADD_PROPERTY) {
+        const auto exprBinder = binder.getExpressionBinder();
+        const auto addInfo =
+            alterEntryRecord.ownedAlterInfo->extraInfo->constPtrCast<BoundExtraAddPropertyInfo>();
+        // We don't implicit cast here since it must already be done the first time
+        const auto boundDefault =
+            exprBinder->bindExpression(*addInfo->propertyDefinition.defaultExpr);
+        auto exprMapper = ExpressionMapper();
+        const auto defaultValueEvaluator = exprMapper.getEvaluator(boundDefault);
+        defaultValueEvaluator->init(ResultSet(0) /* dummy ResultSet */, &clientContext);
+        const auto schema = clientContext.getCatalog()->getTableCatalogEntry(
+            clientContext.getTransaction(), alterEntryRecord.ownedAlterInfo->tableName);
+        const auto& addedProp = schema->getProperty(addInfo->propertyDefinition.getName());
+        TableAddColumnState state{addedProp, *defaultValueEvaluator};
+        KU_ASSERT(clientContext.getStorageManager());
+        const auto storageManager = clientContext.getStorageManager();
+        storageManager->getTable(schema->getTableID())
+            ->addColumn(clientContext.getTransaction(), state);
+    }
+}
+
+void WALReplayer::replayTableInsertionRecord(const WALRecord& walRecord) const {
+    const auto& insertionRecord = walRecord.constCast<TableInsertionRecord>();
+    switch (insertionRecord.tableType) {
+    case TableType::NODE: {
+        replayNodeTableInsertRecord(walRecord);
+    } break;
+    case TableType::REL: {
+        replayRelTableInsertRecord(walRecord);
+    } break;
+    default: {
+        throw RuntimeException("Invalid table type for insertion replay in WAL record.");
+    }
+    }
+}
+
+void WALReplayer::replayNodeTableInsertRecord(const WALRecord& walRecord) const {
+    const auto& insertionRecord = walRecord.constCast<TableInsertionRecord>();
+    const auto tableID = insertionRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<NodeTable>();
+    KU_ASSERT(!insertionRecord.ownedVectors.empty());
+    const auto anchorState = insertionRecord.ownedVectors[0]->state;
+    const auto numNodes = anchorState->getSelVector().getSelSize();
+    for (auto i = 0u; i < insertionRecord.ownedVectors.size(); i++) {
+        insertionRecord.ownedVectors[i]->setState(anchorState);
+    }
+    std::vector<ValueVector*> propertyVectors(insertionRecord.ownedVectors.size());
+    for (auto i = 0u; i < insertionRecord.ownedVectors.size(); i++) {
+        propertyVectors[i] = insertionRecord.ownedVectors[i].get();
+    }
+    KU_ASSERT(table.getPKColumnID() < insertionRecord.ownedVectors.size());
+    auto& pkVector = *insertionRecord.ownedVectors[table.getPKColumnID()];
+    const auto nodeIDVector = std::make_unique<ValueVector>(LogicalType::INTERNAL_ID());
+    nodeIDVector->setState(anchorState);
+    anchorState->getSelVectorUnsafe().setToFiltered(1);
+    for (auto i = 0u; i < numNodes; i++) {
+        anchorState->getSelVectorUnsafe()[0] = i;
+        const auto insertState =
+            std::make_unique<NodeTableInsertState>(*nodeIDVector, pkVector, propertyVectors);
+        KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+        table.insert(clientContext.getTransaction(), *insertState);
+    }
+}
+
+void WALReplayer::replayRelTableInsertRecord(const WALRecord& walRecord) const {
+    const auto& insertionRecord = walRecord.constCast<TableInsertionRecord>();
+    const auto tableID = insertionRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<RelTable>();
+    KU_ASSERT(!insertionRecord.ownedVectors.empty());
+    const auto anchorState = insertionRecord.ownedVectors[0]->state;
+    const auto numRels = anchorState->getSelVector().getSelSize();
+    anchorState->getSelVectorUnsafe().setToFiltered(1);
+    for (auto i = 0u; i < insertionRecord.ownedVectors.size(); i++) {
+        insertionRecord.ownedVectors[i]->setState(anchorState);
+    }
+    std::vector<ValueVector*> propertyVectors;
+    for (auto i = 0u; i < insertionRecord.ownedVectors.size(); i++) {
+        if (i < LOCAL_REL_ID_COLUMN_ID) {
+            // Skip the first two vectors which are the src nodeID and the dst nodeID.
+            continue;
+        }
+        propertyVectors.push_back(insertionRecord.ownedVectors[i].get());
+    }
+    for (auto i = 0u; i < numRels; i++) {
+        anchorState->getSelVectorUnsafe()[0] = i;
+        const auto insertState = std::make_unique<RelTableInsertState>(
+            *insertionRecord.ownedVectors[LOCAL_BOUND_NODE_ID_COLUMN_ID],
+            *insertionRecord.ownedVectors[LOCAL_NBR_NODE_ID_COLUMN_ID], propertyVectors);
+        KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+        table.insert(clientContext.getTransaction(), *insertState);
+    }
+}
+
+void WALReplayer::replayNodeDeletionRecord(const WALRecord& walRecord) const {
+    const auto& deletionRecord = walRecord.constCast<NodeDeletionRecord>();
+    const auto tableID = deletionRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<NodeTable>();
+    const auto anchorState = deletionRecord.ownedPKVector->state;
+    KU_ASSERT(anchorState->getSelVector().getSelSize() == 1);
+    const auto nodeIDVector = std::make_unique<ValueVector>(LogicalType::INTERNAL_ID());
+    nodeIDVector->setState(anchorState);
+    nodeIDVector->setValue<internalID_t>(0,
+        internalID_t{deletionRecord.nodeOffset, deletionRecord.tableID});
+    const auto deleteState =
+        std::make_unique<NodeTableDeleteState>(*nodeIDVector, *deletionRecord.ownedPKVector);
+    KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+    table.delete_(clientContext.getTransaction(), *deleteState);
+}
+
+void WALReplayer::replayNodeUpdateRecord(const WALRecord& walRecord) const {
+    const auto& updateRecord = walRecord.constCast<NodeUpdateRecord>();
+    const auto tableID = updateRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<NodeTable>();
+    const auto anchorState = updateRecord.ownedPropertyVector->state;
+    KU_ASSERT(anchorState->getSelVector().getSelSize() == 1);
+    const auto nodeIDVector = std::make_unique<ValueVector>(LogicalType::INTERNAL_ID());
+    nodeIDVector->setState(anchorState);
+    nodeIDVector->setValue<internalID_t>(0,
+        internalID_t{updateRecord.nodeOffset, updateRecord.tableID});
+    const auto updateState = std::make_unique<NodeTableUpdateState>(updateRecord.columnID,
+        *nodeIDVector, *updateRecord.ownedPropertyVector);
+    KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+    table.update(clientContext.getTransaction(), *updateState);
+}
+
+void WALReplayer::replayRelDeletionRecord(const WALRecord& walRecord) const {
+    const auto& deletionRecord = walRecord.constCast<RelDeletionRecord>();
+    const auto tableID = deletionRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<RelTable>();
+    const auto anchorState = deletionRecord.ownedRelIDVector->state;
+    KU_ASSERT(anchorState->getSelVector().getSelSize() == 1);
+    const auto deleteState =
+        std::make_unique<RelTableDeleteState>(*deletionRecord.ownedSrcNodeIDVector,
+            *deletionRecord.ownedDstNodeIDVector, *deletionRecord.ownedRelIDVector);
+    KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+    table.delete_(clientContext.getTransaction(), *deleteState);
+}
+
+void WALReplayer::replayRelDetachDeletionRecord(const WALRecord& walRecord) const {
+    const auto& deletionRecord = walRecord.constCast<RelDetachDeleteRecord>();
+    const auto tableID = deletionRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<RelTable>();
+    KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+    const auto anchorState = deletionRecord.ownedSrcNodeIDVector->state;
+    KU_ASSERT(anchorState->getSelVector().getSelSize() == 1);
+    const auto dstNodeIDVector =
+        std::make_unique<ValueVector>(LogicalType{LogicalTypeID::INTERNAL_ID});
+    const auto relIDVector = std::make_unique<ValueVector>(LogicalType{LogicalTypeID::INTERNAL_ID});
+    dstNodeIDVector->setState(anchorState);
+    relIDVector->setState(anchorState);
+    const auto deleteState = std::make_unique<RelTableDeleteState>(
+        *deletionRecord.ownedSrcNodeIDVector, *dstNodeIDVector, *relIDVector);
+    table.detachDelete(clientContext.getTransaction(), deletionRecord.direction, deleteState.get());
+}
+
+void WALReplayer::replayRelUpdateRecord(const WALRecord& walRecord) const {
+    const auto& updateRecord = walRecord.constCast<RelUpdateRecord>();
+    const auto tableID = updateRecord.tableID;
+    auto& table = clientContext.getStorageManager()->getTable(tableID)->cast<RelTable>();
+    const auto anchorState = updateRecord.ownedRelIDVector->state;
+    KU_ASSERT(anchorState == updateRecord.ownedSrcNodeIDVector->state &&
+              anchorState == updateRecord.ownedSrcNodeIDVector->state &&
+              anchorState == updateRecord.ownedPropertyVector->state);
+    KU_ASSERT(anchorState->getSelVector().getSelSize() == 1);
+    const auto updateState = std::make_unique<RelTableUpdateState>(updateRecord.columnID,
+        *updateRecord.ownedSrcNodeIDVector, *updateRecord.ownedDstNodeIDVector,
+        *updateRecord.ownedRelIDVector, *updateRecord.ownedPropertyVector);
+    KU_ASSERT(clientContext.getTransaction() && clientContext.getTransaction()->isRecovery());
+    table.update(clientContext.getTransaction(), *updateState);
+}
+
+void WALReplayer::replayCopyTableRecord(const WALRecord&) const {
+    // DO NOTHING.
+}
+
+void WALReplayer::replayUpdateSequenceRecord(const WALRecord& walRecord) const {
+    auto& sequenceEntryRecord = walRecord.constCast<UpdateSequenceRecord>();
+    const auto sequenceID = sequenceEntryRecord.sequenceID;
+    const auto entry =
+        clientContext.getCatalog()->getSequenceEntry(clientContext.getTransaction(), sequenceID);
+    entry->nextKVal(clientContext.getTransaction(), sequenceEntryRecord.kCount);
 }
 
 } // namespace storage

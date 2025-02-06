@@ -1,24 +1,33 @@
 #pragma once
 
+#include <iterator>
+#include <memory>
 #include <vector>
 
-#include "storage/buffer_manager/memory_manager.h"
-#include "storage/file_handle.h"
+#include "common/api.h"
+#include "common/copy_constructors.h"
 
 namespace kuzu {
+namespace storage {
+class MemoryBuffer;
+class MemoryManager;
+} // namespace storage
+
 namespace common {
 
-struct BufferBlock {
+struct KUZU_API BufferBlock {
 public:
-    explicit BufferBlock(std::unique_ptr<storage::MemoryBuffer> block)
-        : size{block->allocator->getPageSize()}, currentOffset{0}, block{std::move(block)} {}
+    explicit BufferBlock(std::unique_ptr<storage::MemoryBuffer> block);
+    ~BufferBlock();
+
+    uint64_t size() const;
+    uint8_t* data() const;
 
 public:
-    uint64_t size;
     uint64_t currentOffset;
     std::unique_ptr<storage::MemoryBuffer> block;
 
-    inline void resetCurrentOffset() { currentOffset = 0; }
+    void resetCurrentOffset() { currentOffset = 0; }
 };
 
 class InMemOverflowBuffer {
@@ -27,9 +36,11 @@ public:
     explicit InMemOverflowBuffer(storage::MemoryManager* memoryManager)
         : memoryManager{memoryManager}, currentBlock{nullptr} {};
 
+    DEFAULT_BOTH_MOVE(InMemOverflowBuffer);
+
     uint8_t* allocateSpace(uint64_t size);
 
-    inline void merge(InMemOverflowBuffer& other) {
+    void merge(InMemOverflowBuffer& other) {
         move(begin(other.blocks), end(other.blocks), back_inserter(blocks));
         // We clear the other InMemOverflowBuffer's block because when it is deconstructed,
         // InMemOverflowBuffer's deconstructed tries to free these pages by calling
@@ -42,30 +53,15 @@ public:
     // Releases all memory accumulated for string overflows so far and re-initializes its state to
     // an empty buffer. If there is a large string that used point to any of these overflow buffers
     // they will error.
-    inline void resetBuffer() {
-        if (!blocks.empty()) {
-            auto firstBlock = std::move(blocks[0]);
-            blocks.clear();
-            firstBlock->resetCurrentOffset();
-            blocks.push_back(std::move(firstBlock));
-        }
-        if (!blocks.empty()) {
-            currentBlock = blocks[0].get();
-        }
-    }
+    void resetBuffer();
 
 private:
-    inline bool requireNewBlock(uint64_t sizeToAllocate) {
-        if (sizeToAllocate > BufferPoolConstants::PAGE_256KB_SIZE) {
-            throw RuntimeException("Require size " + std::to_string(sizeToAllocate) +
-                                   " greater than single block size " +
-                                   std::to_string(BufferPoolConstants::PAGE_256KB_SIZE) + ".");
-        }
+    bool requireNewBlock(uint64_t sizeToAllocate) {
         return currentBlock == nullptr ||
-               (currentBlock->currentOffset + sizeToAllocate) > currentBlock->size;
+               (currentBlock->currentOffset + sizeToAllocate) > currentBlock->size();
     }
 
-    void allocateNewBlock();
+    void allocateNewBlock(uint64_t size);
 
 private:
     std::vector<std::unique_ptr<BufferBlock>> blocks;

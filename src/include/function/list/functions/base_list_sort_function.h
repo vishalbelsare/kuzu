@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/exception/runtime.h"
 #include "common/string_utils.h"
 #include "common/vector/value_vector.h"
 
@@ -41,7 +42,7 @@ public:
 
         // Calculate null count.
         auto nullCount = 0;
-        for (auto i = 0; i < input.size; i++) {
+        for (auto i = 0u; i < input.size; i++) {
             if (inputDataVector->isNull(input.offset + i)) {
                 nullCount += 1;
             }
@@ -58,7 +59,7 @@ public:
         }
 
         // Add actual data.
-        for (auto i = 0; i < input.size; i++) {
+        for (auto i = 0u; i < input.size; i++) {
             if (inputDataVector->isNull(inputPos)) {
                 inputPos++;
                 continue;
@@ -68,8 +69,8 @@ public:
 
         // Add nulls in the end.
         if (!nullFirst) {
-            setVectorRangeToNull(
-                *resultDataVector, result.offset, input.size - nullCount, input.size);
+            setVectorRangeToNull(*resultDataVector, result.offset, input.size - nullCount,
+                input.size);
         }
 
         // Determine the starting and ending position of the data to be sorted.
@@ -90,8 +91,8 @@ public:
         }
     }
 
-    static void setVectorRangeToNull(
-        common::ValueVector& vector, uint64_t offset, uint64_t startPos, uint64_t endPos) {
+    static void setVectorRangeToNull(common::ValueVector& vector, uint64_t offset,
+        uint64_t startPos, uint64_t endPos) {
         for (auto i = startPos; i < endPos; i++) {
             vector.setNull(offset + i, true);
         }

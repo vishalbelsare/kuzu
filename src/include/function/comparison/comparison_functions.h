@@ -1,9 +1,5 @@
 #pragma once
 
-#include <cassert>
-#include <functional>
-
-#include "common/type_utils.h"
 #include "common/vector/value_vector.h"
 
 namespace kuzu {
@@ -12,8 +8,15 @@ namespace function {
 struct Equals {
     template<class A, class B>
     static inline void operation(const A& left, const B& right, uint8_t& result,
-        common::ValueVector* leftVector, common::ValueVector* rightVector) {
+        common::ValueVector* /*leftVector*/, common::ValueVector* /*rightVector*/) {
         result = left == right;
+    }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
     }
 };
 
@@ -24,13 +27,27 @@ struct NotEquals {
         Equals::operation(left, right, result, leftVector, rightVector);
         result = !result;
     }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
+    }
 };
 
 struct GreaterThan {
     template<class A, class B>
     static inline void operation(const A& left, const B& right, uint8_t& result,
-        common::ValueVector* leftVector, common::ValueVector* rightVector) {
+        common::ValueVector* /*leftVector*/, common::ValueVector* /*rightVector*/) {
         result = left > right;
+    }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
     }
 };
 
@@ -38,11 +55,18 @@ struct GreaterThanEquals {
     template<class A, class B>
     static inline void operation(const A& left, const B& right, uint8_t& result,
         common::ValueVector* leftVector, common::ValueVector* rightVector) {
-        uint8_t isGreater;
-        uint8_t isEqual;
+        uint8_t isGreater = 0;
+        uint8_t isEqual = 0;
         GreaterThan::operation(left, right, isGreater, leftVector, rightVector);
         Equals::operation(left, right, isEqual, leftVector, rightVector);
         result = isGreater || isEqual;
+    }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
     }
 };
 
@@ -53,6 +77,13 @@ struct LessThan {
         GreaterThanEquals::operation(left, right, result, leftVector, rightVector);
         result = !result;
     }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
+    }
 };
 
 struct LessThanEquals {
@@ -61,6 +92,13 @@ struct LessThanEquals {
         common::ValueVector* leftVector, common::ValueVector* rightVector) {
         GreaterThan::operation(left, right, result, leftVector, rightVector);
         result = !result;
+    }
+
+    template<class T>
+    static bool operation(const T& left, const T& right) {
+        uint8_t result = 0;
+        operation<T>(left, right, result, nullptr, nullptr);
+        return result;
     }
 };
 

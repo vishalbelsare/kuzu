@@ -1,7 +1,12 @@
 #pragma once
 
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "common/api.h"
-#include "common/types/value.h"
+#include "common/types/value/value.h"
 
 namespace kuzu {
 namespace processor {
@@ -24,7 +29,7 @@ public:
      */
     KUZU_API common::Value* getValue(uint32_t idx) const;
 
-    std::string toString();
+    KUZU_API std::string toString();
 
     /**
      * @param colsWidth The length of each column

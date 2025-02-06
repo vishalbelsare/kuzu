@@ -7,44 +7,51 @@
 
 #include "common/constants.h"
 #include "common/types/types.h"
+#include <span>
 
 namespace kuzu {
+
+namespace common {
+class VirtualFileSystem;
+}
+
 namespace storage {
 
-class MemoryAllocator;
-class BMFileHandle;
+class MemoryManager;
+class FileHandle;
 class BufferManager;
+class ChunkedNodeGroup;
 
 class MemoryBuffer {
-public:
-    MemoryBuffer(MemoryAllocator* allocator, common::page_idx_t blockIdx, uint8_t* buffer);
-    ~MemoryBuffer();
+    friend class Spiller;
 
 public:
-    uint8_t* buffer;
+    KUZU_API MemoryBuffer(MemoryManager* mm, common::page_idx_t blockIdx, uint8_t* buffer,
+        uint64_t size = common::TEMP_PAGE_SIZE);
+    KUZU_API ~MemoryBuffer();
+    DELETE_COPY_AND_MOVE(MemoryBuffer);
+
+    std::span<uint8_t> getBuffer() const {
+        KU_ASSERT(!evicted);
+        return buffer;
+    }
+    uint8_t* getData() const { return getBuffer().data(); }
+
+    MemoryManager* getMemoryManager() const { return mm; }
+
+private:
+    // Can be called multiple times safely
+    void prepareLoadFromDisk();
+
+    // Must only be called once before loading from disk
+    void setSpilledToDisk(uint64_t filePosition);
+
+private:
+    std::span<uint8_t> buffer;
+    uint64_t filePosition = UINT64_MAX;
+    MemoryManager* mm;
     common::page_idx_t pageIdx;
-    MemoryAllocator* allocator;
-};
-
-class MemoryAllocator {
-    friend class MemoryBuffer;
-
-public:
-    explicit MemoryAllocator(BufferManager* bm);
-    ~MemoryAllocator();
-
-    std::unique_ptr<MemoryBuffer> allocateBuffer(bool initializeToZero = false);
-    inline common::page_offset_t getPageSize() const { return pageSize; }
-
-private:
-    void freeBlock(common::page_idx_t pageIdx);
-
-private:
-    std::unique_ptr<BMFileHandle> fh;
-    BufferManager* bm;
-    common::page_offset_t pageSize;
-    std::stack<common::page_idx_t> freePages;
-    std::mutex allocatorLock;
+    bool evicted;
 };
 
 /*
@@ -52,30 +59,42 @@ private:
  * It can allocate a memory buffer of size PAGE_256KB from the buffer manager backed by a
  * BMFileHandle with temp in-mem file.
  *
- * Internally, MM uses a MemoryAllocator. The MemoryAllocator is holding the BMFileHandle backed by
- * a temp in-mem file, and responsible for allocating/reclaiming memory buffers of its size class
- * from the buffer manager. The MemoryAllocator keeps track of free pages in the BMFileHandle, so
- * that it can reuse those freed pages without allocating new pages. The MemoryAllocator is
+ * The MemoryManager holds a BMFileHandle backed by
+ * a temp in-mem file, and is responsible for allocating/reclaiming memory buffers of its size class
+ * from the buffer manager. The MemoryManager keeps track of free pages in the BMFileHandle, so
+ * that it can reuse those freed pages without allocating new pages. The MemoryManager is
  * thread-safe, so that multiple threads can allocate/reclaim memory blocks with the same size class
  * at the same time.
  *
  * MM will return a MemoryBuffer to the caller, which is a wrapper of the allocated memory block,
  * and it will automatically call its allocator to reclaim the memory block when it is destroyed.
  */
-class MemoryManager {
-public:
-    explicit MemoryManager(BufferManager* bm) : bm{bm} {
-        allocator = std::make_unique<MemoryAllocator>(bm);
-    }
+class KUZU_API MemoryManager {
+    friend class MemoryBuffer;
 
-    inline std::unique_ptr<MemoryBuffer> allocateBuffer(bool initializeToZero = false) {
-        return allocator->allocateBuffer(initializeToZero);
-    }
-    inline BufferManager* getBufferManager() const { return bm; }
+public:
+    MemoryManager(BufferManager* bm, common::VirtualFileSystem* vfs);
+
+    ~MemoryManager() = default;
+
+    std::unique_ptr<MemoryBuffer> mallocBuffer(bool initializeToZero, uint64_t size);
+    std::unique_ptr<MemoryBuffer> allocateBuffer(bool initializeToZero = false,
+        uint64_t size = common::TEMP_PAGE_SIZE);
+    common::page_offset_t getPageSize() const { return pageSize; }
+
+    BufferManager* getBufferManager() const { return bm; }
 
 private:
+    void freeBlock(common::page_idx_t pageIdx, std::span<uint8_t> buffer);
+    std::span<uint8_t> mallocBufferInternal(bool initializeToZero, uint64_t size);
+
+private:
+    FileHandle* fh;
     BufferManager* bm;
-    std::unique_ptr<MemoryAllocator> allocator;
+    common::page_offset_t pageSize;
+    std::stack<common::page_idx_t> freePages;
+    std::mutex allocatorLock;
 };
+
 } // namespace storage
 } // namespace kuzu

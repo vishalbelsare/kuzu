@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::ffi::ffi;
 use crate::query_result::QueryResult;
 use crate::value::Value;
-use cxx::{let_cxx_string, UniquePtr};
+use cxx::UniquePtr;
 use std::cell::UnsafeCell;
 use std::convert::TryInto;
 
@@ -30,10 +30,10 @@ pub struct PreparedStatement {
 /// [error](Error::FailedQuery) if another write query is in progress.
 ///
 /// ```
-/// # use kuzu::{Connection, Database, Value, Error};
+/// # use kuzu::{Connection, Database, SystemConfig, Value, Error};
 /// # fn main() -> anyhow::Result<()> {
 /// # let temp_dir = tempfile::tempdir()?;
-/// # let db = Database::new(temp_dir.path(), 0)?;
+/// # let db = Database::new(temp_dir.path(), SystemConfig::default())?;
 /// let conn = Connection::new(&db)?;
 /// conn.query("CREATE NODE TABLE Person(name STRING, age INT32, PRIMARY KEY(name));")?;
 /// // Write queries must be done sequentially
@@ -62,67 +62,6 @@ pub struct PreparedStatement {
 /// # }
 /// ```
 ///
-/// ## Committing
-/// If the connection is in AUTO_COMMIT mode any query over the connection will be wrapped around
-/// a transaction and committed (even if the query is READ_ONLY).
-/// If the connection is in MANUAL transaction mode, which happens only if an application
-/// manually begins a transaction (see below), then an application has to manually commit or
-/// rollback the transaction by calling commit() or rollback().
-///
-/// AUTO_COMMIT is the default mode when a Connection is created. If an application calls
-/// begin[ReadOnly/Write]Transaction at any point, the mode switches to MANUAL. This creates
-/// an "active transaction" in the connection. When a connection is in MANUAL mode and the
-/// active transaction is rolled back or committed, then the active transaction is removed (so
-/// the connection no longer has an active transaction) and the mode automatically switches
-/// back to AUTO_COMMIT.
-/// Note: When a Connection object is deconstructed, if the connection has an active (manual)
-/// transaction, then the active transaction is rolled back.
-///
-/// ```
-/// use kuzu::{Database, Connection};
-/// # use anyhow::Error;
-/// # fn main() -> Result<(), Error> {
-/// # let temp_dir = tempfile::tempdir()?;
-/// # let path = temp_dir.path();
-/// let db = Database::new(path, 0)?;
-/// let conn = Connection::new(&db)?;
-/// // AUTO_COMMIT mode
-/// conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
-/// conn.begin_write_transaction()?;
-/// // MANUAL mode (write)
-/// conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
-/// conn.query("CREATE (:Person {name: 'Bob', age: 30});")?;
-/// // Queries committed and mode goes back to AUTO_COMMIT
-/// conn.commit()?;
-/// let result = conn.query("MATCH (a:Person) RETURN a.name AS NAME, a.age AS AGE;")?;
-/// assert!(result.count() == 2);
-/// # temp_dir.close()?;
-/// # Ok(())
-/// # }
-/// ```
-///
-/// ```
-/// use kuzu::{Database, Connection};
-/// # use anyhow::Error;
-/// # fn main() -> Result<(), Error> {
-/// # let temp_dir = tempfile::tempdir()?;
-/// # let path = temp_dir.path();
-/// let db = Database::new(path, 0)?;
-/// let conn = Connection::new(&db)?;
-/// // AUTO_COMMIT mode
-/// conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
-/// conn.begin_write_transaction()?;
-/// // MANUAL mode (write)
-/// conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
-/// conn.query("CREATE (:Person {name: 'Bob', age: 30});")?;
-/// // Queries rolled back and mode goes back to AUTO_COMMIT
-/// conn.rollback()?;
-/// let result = conn.query("MATCH (a:Person) RETURN a.name AS NAME, a.age AS AGE;")?;
-/// assert!(result.count() == 0);
-/// # temp_dir.close()?;
-/// # Ok(())
-/// # }
-/// ```
 pub struct Connection<'a> {
     // bmwinger: Access to the underlying value for synchronized functions can be done
     // with (*self.conn.get()).pin_mut()
@@ -169,8 +108,8 @@ impl<'a> Connection<'a> {
     /// * `query`: The query to prepare.
     ///            See <https://kuzudb.com/docs/cypher> for details on the query format
     pub fn prepare(&self, query: &str) -> Result<PreparedStatement, Error> {
-        let_cxx_string!(query = query);
-        let statement = unsafe { (*self.conn.get()).pin_mut() }.prepare(&query)?;
+        let statement =
+            unsafe { (*self.conn.get()).pin_mut() }.prepare(ffi::StringView::new(query))?;
         if statement.isSuccess() {
             Ok(PreparedStatement { statement })
         } else {
@@ -189,13 +128,20 @@ impl<'a> Connection<'a> {
     // should be generic.
     //
     // E.g.
-    // let result: QueryResult<kuzu::value::VarList<kuzu::value::String>> = conn.query("...")?;
+    // let result: QueryResult<kuzu::value::List<kuzu::value::String>> = conn.query("...")?;
     // let result: QueryResult<kuzu::value::Int64> = conn.query("...")?;
     //
     // But this would really just be syntactic sugar wrapping the current system
     pub fn query(&self, query: &str) -> Result<QueryResult, Error> {
-        let mut statement = self.prepare(query)?;
-        self.execute(&mut statement, vec![])
+        let conn = unsafe { (*self.conn.get()).pin_mut() };
+        let result = ffi::connection_query(conn, ffi::StringView::new(query))?;
+        if !result.isSuccess() {
+            Err(Error::FailedQuery(ffi::query_result_get_error_message(
+                &result,
+            )))
+        } else {
+            Ok(QueryResult { result })
+        }
     }
 
     /// Executes the given prepared statement with args and returns the result.
@@ -227,58 +173,10 @@ impl<'a> Connection<'a> {
         }
     }
 
-    /// Manually starts a new read-only transaction in the current connection
-    pub fn begin_read_only_transaction(&self) -> Result<(), Error> {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        Ok(conn.beginReadOnlyTransaction()?)
-    }
-
-    /// Manually starts a new write transaction in the current connection
-    pub fn begin_write_transaction(&self) -> Result<(), Error> {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        Ok(conn.beginWriteTransaction()?)
-    }
-
-    /// Manually commits the current transaction
-    pub fn commit(&self) -> Result<(), Error> {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        Ok(conn.commit()?)
-    }
-
-    /// Manually rolls back the current transaction
-    pub fn rollback(&self) -> Result<(), Error> {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        Ok(conn.rollback()?)
-    }
-
     /// Interrupts all queries currently executing within this connection
     pub fn interrupt(&self) -> Result<(), Error> {
         let conn = unsafe { (*self.conn.get()).pin_mut() };
         Ok(conn.interrupt()?)
-    }
-
-    /// Returns all node table names in string format
-    pub fn get_node_table_names(&self) -> String {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        ffi::get_node_table_names(conn)
-    }
-
-    /// Returns all rel table names in string format
-    pub fn get_rel_table_names(&self) -> String {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        ffi::get_rel_table_names(conn)
-    }
-
-    /// Returns all property names of the given table
-    pub fn get_node_property_names(&self, table_name: &str) -> String {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        ffi::get_node_property_names(conn, table_name)
-    }
-
-    /// Returns all property names of the given table
-    pub fn get_rel_property_names(&self, rel_table_name: &str) -> String {
-        let conn = unsafe { (*self.conn.get()).pin_mut() };
-        ffi::get_rel_property_names(conn, rel_table_name)
     }
 
     /// Sets the query timeout value of the current connection
@@ -292,16 +190,13 @@ impl<'a> Connection<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{connection::Connection, database::Database, value::Value};
+    use crate::{Connection, Database, SystemConfig, Value};
     use anyhow::{Error, Result};
-    // Note: Cargo runs tests in parallel by default, however kuzu does not support
-    // working with multiple databases in parallel.
-    // Tests can be run serially with `cargo test -- --test-threads=1` to work around this.
 
     #[test]
     fn test_connection_threads() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
         let mut conn = Connection::new(&db)?;
         conn.set_max_num_threads_for_exec(5);
         assert_eq!(conn.get_max_num_threads_for_exec(), 5);
@@ -312,7 +207,7 @@ mod tests {
     #[test]
     fn test_invalid_query() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
         conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
@@ -333,9 +228,22 @@ Invalid input <MATCH (a:Person RETURN>: expected rule oC_SingleQuery (line: 1, o
     }
 
     #[test]
+    fn test_multiple_statement_query() -> Result<()> {
+        let temp_dir = tempfile::tempdir()?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
+        let conn = Connection::new(&db)?;
+        conn.query("CREATE NODE TABLE Person(name STRING, age INT64, PRIMARY KEY(name));")?;
+        conn.query(
+            "CREATE (:Person {name: 'Alice', age: 25});
+            CREATE (:Person {name: 'Bob', age: 30});",
+        )?;
+        Ok(())
+    }
+
+    #[test]
     fn test_query_result() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT16, PRIMARY KEY(name));")?;
         conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
@@ -352,7 +260,7 @@ Invalid input <MATCH (a:Person RETURN>: expected rule oC_SingleQuery (line: 1, o
     #[test]
     fn test_params() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT16, PRIMARY KEY(name));")?;
         conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
@@ -368,34 +276,9 @@ Invalid input <MATCH (a:Person RETURN>: expected rule oC_SingleQuery (line: 1, o
     }
 
     #[test]
-    fn test_params_invalid_type() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
-        let conn = Connection::new(&db)?;
-        conn.query("CREATE NODE TABLE Person(name STRING, age INT16, PRIMARY KEY(name));")?;
-        conn.query("CREATE (:Person {name: 'Alice', age: 25});")?;
-        conn.query("CREATE (:Person {name: 'Bob', age: 30});")?;
-
-        let mut statement = conn.prepare("MATCH (a:Person) WHERE a.age = $age RETURN a.name;")?;
-        let result: Error = conn
-            .execute(
-                &mut statement,
-                vec![("age", Value::String("25".to_string()))],
-            )
-            .expect_err("Age should be an int16!")
-            .into();
-        assert_eq!(
-            result.to_string(),
-            "Query execution failed: Parameter age has data type STRING but expects INT16."
-        );
-        temp_dir.close()?;
-        Ok(())
-    }
-
-    #[test]
     fn test_multithreaded_single_conn() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
 
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT32, PRIMARY KEY(name));")?;
@@ -427,7 +310,7 @@ Invalid input <MATCH (a:Person RETURN>: expected rule oC_SingleQuery (line: 1, o
     #[test]
     fn test_multithreaded_multiple_conn() -> Result<()> {
         let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
+        let db = Database::new(temp_dir.path(), SystemConfig::default())?;
 
         let conn = Connection::new(&db)?;
         conn.query("CREATE NODE TABLE Person(name STRING, age INT32, PRIMARY KEY(name));")?;
@@ -454,36 +337,6 @@ Invalid input <MATCH (a:Person RETURN>: expected rule oC_SingleQuery (line: 1, o
 
         assert_eq!(alice, vec!["Alice".into(), 25.into()]);
         assert_eq!(bob, vec!["Bob".into(), 30.into()]);
-        temp_dir.close()?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_table_names() -> Result<()> {
-        let temp_dir = tempfile::tempdir()?;
-        let db = Database::new(temp_dir.path(), 0)?;
-        let conn = Connection::new(&db)?;
-        conn.query("CREATE NODE TABLE Person(name STRING, age INT16, PRIMARY KEY(name));")?;
-        conn.query("CREATE REL TABLE Follows(FROM Person TO Person, since DATE);")?;
-        assert_eq!(
-            conn.get_node_table_names(),
-            "Node tables: \n\tPerson\n".to_string()
-        );
-        assert_eq!(
-            conn.get_rel_table_names(),
-            "Rel tables: \n\tFollows\n".to_string()
-        );
-        assert_eq!(
-            conn.get_node_property_names("Person"),
-            "Person properties: \n\tname STRING(PRIMARY KEY)\n\tage INT16\n".to_string()
-        );
-        assert_eq!(
-            conn.get_rel_property_names("Follows"),
-            "Follows src node: Person\n\
-            Follows dst node: Person\nFollows properties: \n\tsince DATE\n"
-                .to_string()
-        );
-
         temp_dir.close()?;
         Ok(())
     }

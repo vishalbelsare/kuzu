@@ -1,33 +1,38 @@
 #pragma once
 
-#include "common/vector/value_vector.h"
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-struct MapCreationVectorFunctions {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct MapCreationFunctions {
+    static constexpr const char* name = "MAP";
+
+    static function_set getFunctionSet();
 };
 
-struct MapExtractVectorFunctions {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct MapExtractFunctions {
+    static constexpr const char* name = "MAP_EXTRACT";
+
+    static function_set getFunctionSet();
 };
 
-struct MapKeysVectorFunctions {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct ElementAtFunctions {
+    using alias = MapExtractFunctions;
+
+    static constexpr const char* name = "ELEMENT_AT";
 };
 
-struct MapValuesVectorFunctions {
-    static vector_function_definitions getDefinitions();
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+struct MapKeysFunctions {
+    static constexpr const char* name = "MAP_KEYS";
+
+    static function_set getFunctionSet();
+};
+
+struct MapValuesFunctions {
+    static constexpr const char* name = "MAP_VALUES";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

@@ -20,9 +20,9 @@ public:
 
 private:
     void loadBenchmark(const std::string& benchmarkPath);
-    void logQueryInfo(
-        std::ofstream& log, uint32_t runNum, std::vector<std::string>& actualOutput) const;
-    void verify(std::vector<std::string>& actualOutput) const;
+    void logQueryInfo(std::ofstream& log, uint32_t runNum,
+        const std::vector<std::string>& actualOutput) const;
+    void verify(const std::vector<std::string>& actualOutput) const;
 
 public:
     BenchmarkConfig& config;
@@ -30,7 +30,8 @@ public:
     std::string name;
     std::string query;
     std::vector<std::string> expectedOutput;
-    std::string encodedJoin;
+    bool compareResult;
+    uint64_t expectedNumTuples;
 };
 
 } // namespace benchmark

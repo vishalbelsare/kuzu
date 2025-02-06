@@ -1,260 +1,250 @@
 #pragma once
 
-#include "arithmetic_functions.h"
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-class VectorArithmeticFunction : public VectorFunction {
-public:
-    template<typename FUNC>
-    static std::unique_ptr<VectorFunctionDefinition> getUnaryDefinition(
-        std::string name, common::LogicalTypeID operandTypeID) {
-        function::scalar_exec_func execFunc;
-        getUnaryExecFunc<FUNC>(operandTypeID, execFunc);
-        return std::make_unique<VectorFunctionDefinition>(std::move(name),
-            std::vector<common::LogicalTypeID>{operandTypeID}, operandTypeID, execFunc);
-    }
+struct AddFunction {
+    static constexpr const char* name = "+";
 
-    template<typename FUNC, typename OPERAND_TYPE, typename RETURN_TYPE = OPERAND_TYPE>
-    static std::unique_ptr<VectorFunctionDefinition> getUnaryDefinition(
-        std::string name, common::LogicalTypeID operandTypeID, common::LogicalTypeID resultTypeID) {
-        return std::make_unique<VectorFunctionDefinition>(std::move(name),
-            std::vector<common::LogicalTypeID>{operandTypeID}, resultTypeID,
-            UnaryExecFunction<OPERAND_TYPE, RETURN_TYPE, FUNC>);
-    }
-
-    template<typename FUNC>
-    static inline std::unique_ptr<VectorFunctionDefinition> getBinaryDefinition(
-        std::string name, common::LogicalTypeID operandTypeID) {
-        function::scalar_exec_func execFunc;
-        getBinaryExecFunc<FUNC>(operandTypeID, execFunc);
-        return std::make_unique<VectorFunctionDefinition>(std::move(name),
-            std::vector<common::LogicalTypeID>{operandTypeID, operandTypeID}, operandTypeID,
-            execFunc);
-    }
-
-    template<typename FUNC, typename OPERAND_TYPE, typename RETURN_TYPE = OPERAND_TYPE>
-    static inline std::unique_ptr<VectorFunctionDefinition> getBinaryDefinition(
-        std::string name, common::LogicalTypeID operandTypeID, common::LogicalTypeID resultTypeID) {
-        return std::make_unique<VectorFunctionDefinition>(std::move(name),
-            std::vector<common::LogicalTypeID>{operandTypeID, operandTypeID}, resultTypeID,
-            BinaryExecFunction<OPERAND_TYPE, OPERAND_TYPE, RETURN_TYPE, FUNC>);
-    }
-
-private:
-    template<typename FUNC>
-    static void getUnaryExecFunc(common::LogicalTypeID operandTypeID, scalar_exec_func& func) {
-        switch (operandTypeID) {
-        case common::LogicalTypeID::SERIAL:
-        case common::LogicalTypeID::INT64: {
-            func = UnaryExecFunction<int64_t, int64_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::INT32: {
-            func = UnaryExecFunction<int32_t, int32_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::INT16: {
-            func = UnaryExecFunction<int16_t, int16_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::DOUBLE: {
-            func = UnaryExecFunction<double_t, double_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::FLOAT: {
-            func = UnaryExecFunction<float_t, float_t, FUNC>;
-            return;
-        }
-        default:
-            throw common::RuntimeException(
-                "Invalid input data types(" +
-                common::LogicalTypeUtils::dataTypeToString(operandTypeID) +
-                ") for getUnaryExecFunc.");
-        }
-    }
-
-    template<typename FUNC>
-    static void getBinaryExecFunc(common::LogicalTypeID operandTypeID, scalar_exec_func& func) {
-        switch (operandTypeID) {
-        case common::LogicalTypeID::SERIAL:
-        case common::LogicalTypeID::INT64: {
-            func = BinaryExecFunction<int64_t, int64_t, int64_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::INT32: {
-            func = BinaryExecFunction<int32_t, int32_t, int32_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::INT16: {
-            func = BinaryExecFunction<int16_t, int16_t, int16_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::DOUBLE: {
-            func = BinaryExecFunction<double_t, double_t, double_t, FUNC>;
-            return;
-        }
-        case common::LogicalTypeID::FLOAT: {
-            func = BinaryExecFunction<float_t, float_t, float_t, FUNC>;
-            return;
-        }
-        default:
-            throw common::RuntimeException(
-                "Invalid input data types(" +
-                common::LogicalTypeUtils::dataTypeToString(operandTypeID) +
-                ") for getUnaryExecFunc.");
-        }
-    }
+    static function_set getFunctionSet();
 };
 
-struct AddVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct SubtractFunction {
+    static constexpr const char* name = "-";
+
+    static function_set getFunctionSet();
 };
 
-struct SubtractVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct MultiplyFunction {
+    static constexpr const char* name = "*";
+
+    static function_set getFunctionSet();
 };
 
-struct MultiplyVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct DivideFunction {
+    static constexpr const char* name = "/";
+
+    static function_set getFunctionSet();
 };
 
-struct DivideVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct ModuloFunction {
+    static constexpr const char* name = "%";
+
+    static function_set getFunctionSet();
 };
 
-struct ModuloVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct PowerFunction {
+    static constexpr const char* name = "^";
+
+    static function_set getFunctionSet();
 };
 
-struct PowerVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct PowFunction {
+    using alias = PowerFunction;
+
+    static constexpr const char* name = "POW";
 };
 
-struct AbsVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct AbsFunction {
+    static constexpr const char* name = "ABS";
+
+    static function_set getFunctionSet();
 };
 
-struct AcosVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct AcosFunction {
+    static constexpr const char* name = "ACOS";
+
+    static function_set getFunctionSet();
 };
 
-struct AsinVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct AsinFunction {
+    static constexpr const char* name = "ASIN";
+
+    static function_set getFunctionSet();
 };
 
-struct AtanVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct AtanFunction {
+    static constexpr const char* name = "ATAN";
+
+    static function_set getFunctionSet();
 };
 
-struct Atan2VectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct Atan2Function {
+    static constexpr const char* name = "ATAN2";
+
+    static function_set getFunctionSet();
 };
 
-struct BitwiseXorVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct BitwiseXorFunction {
+    static constexpr const char* name = "BITWISE_XOR";
+
+    static function_set getFunctionSet();
 };
 
-struct BitwiseAndVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct BitwiseAndFunction {
+    static constexpr const char* name = "BITWISE_AND";
+
+    static function_set getFunctionSet();
 };
 
-struct BitwiseOrVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct BitwiseOrFunction {
+    static constexpr const char* name = "BITWISE_OR";
+
+    static function_set getFunctionSet();
 };
 
-struct BitShiftLeftVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct BitShiftLeftFunction {
+    static constexpr const char* name = "BITSHIFT_LEFT";
+
+    static function_set getFunctionSet();
 };
 
-struct BitShiftRightVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct BitShiftRightFunction {
+    static constexpr const char* name = "BITSHIFT_RIGHT";
+
+    static function_set getFunctionSet();
 };
 
-struct CbrtVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct CbrtFunction {
+    static constexpr const char* name = "CBRT";
+
+    static function_set getFunctionSet();
 };
 
-struct CeilVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct CeilFunction {
+    static constexpr const char* name = "CEIL";
+
+    static function_set getFunctionSet();
 };
 
-struct CosVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct CeilingFunction {
+    using alias = CeilFunction;
+
+    static constexpr const char* name = "CEILING";
 };
 
-struct CotVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct CosFunction {
+    static constexpr const char* name = "COS";
+
+    static function_set getFunctionSet();
 };
 
-struct DegreesVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct CotFunction {
+    static constexpr const char* name = "COT";
+
+    static function_set getFunctionSet();
 };
 
-struct EvenVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct DegreesFunction {
+    static constexpr const char* name = "DEGREES";
+
+    static function_set getFunctionSet();
 };
 
-struct FactorialVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct EvenFunction {
+    static constexpr const char* name = "EVEN";
+
+    static function_set getFunctionSet();
 };
 
-struct FloorVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct FactorialFunction {
+    static constexpr const char* name = "FACTORIAL";
+
+    static function_set getFunctionSet();
 };
 
-struct GammaVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct FloorFunction {
+    static constexpr const char* name = "FLOOR";
+
+    static function_set getFunctionSet();
 };
 
-struct LgammaVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct GammaFunction {
+    static constexpr const char* name = "GAMMA";
+
+    static function_set getFunctionSet();
 };
 
-struct LnVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct LgammaFunction {
+    static constexpr const char* name = "LGAMMA";
+
+    static function_set getFunctionSet();
 };
 
-struct LogVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct LnFunction {
+    static constexpr const char* name = "LN";
+
+    static function_set getFunctionSet();
 };
 
-struct Log2VectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct LogFunction {
+    static constexpr const char* name = "LOG";
+
+    static constexpr const char* alias = "LOG10";
+
+    static function_set getFunctionSet();
 };
 
-struct NegateVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct Log10Function {
+    using alias = LogFunction;
+
+    static constexpr const char* name = "LOG10";
 };
 
-struct PiVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct Log2Function {
+    static constexpr const char* name = "LOG2";
+
+    static function_set getFunctionSet();
 };
 
-struct RadiansVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct NegateFunction {
+    static constexpr const char* name = "NEGATE";
+
+    static function_set getFunctionSet();
 };
 
-struct RoundVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct PiFunction {
+    static constexpr const char* name = "PI";
+
+    static function_set getFunctionSet();
 };
 
-struct SinVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct RadiansFunction {
+    static constexpr const char* name = "RADIANS";
+
+    static function_set getFunctionSet();
 };
 
-struct SignVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct RoundFunction {
+    static constexpr const char* name = "ROUND";
+
+    static function_set getFunctionSet();
 };
 
-struct SqrtVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct SinFunction {
+    static constexpr const char* name = "SIN";
+
+    static function_set getFunctionSet();
 };
 
-struct TanVectorFunction : public VectorArithmeticFunction {
-    static vector_function_definitions getDefinitions();
+struct SignFunction {
+    static constexpr const char* name = "SIGN";
+
+    static function_set getFunctionSet();
+};
+
+struct SqrtFunction {
+    static constexpr const char* name = "SQRT";
+
+    static function_set getFunctionSet();
+};
+
+struct TanFunction {
+    static constexpr const char* name = "TAN";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

@@ -1,41 +1,80 @@
 #pragma once
 
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
-class VectorDateFunction : public VectorFunction {};
 
-struct DatePartVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct DatePartFunction {
+    static constexpr const char* name = "DATE_PART";
+
+    static function_set getFunctionSet();
 };
 
-struct DateTruncVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct DatePartFunctionAlias {
+    using alias = DatePartFunction;
+
+    static constexpr const char* name = "DATEPART";
 };
 
-struct DayNameVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct DateTruncFunction {
+    static constexpr const char* name = "DATE_TRUNC";
+
+    static function_set getFunctionSet();
 };
 
-struct GreatestVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct DateTruncFunctionAlias {
+    using alias = DateTruncFunction;
+
+    static constexpr const char* name = "DATETRUNC";
 };
 
-struct LastDayVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct DayNameFunction {
+    static constexpr const char* name = "DAYNAME";
+
+    static function_set getFunctionSet();
 };
 
-struct LeastVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct GreatestFunction {
+    static constexpr const char* name = "GREATEST";
+
+    static function_set getFunctionSet();
 };
 
-struct MakeDateVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct LastDayFunction {
+    static constexpr const char* name = "LAST_DAY";
+
+    static function_set getFunctionSet();
 };
 
-struct MonthNameVectorFunction : public VectorDateFunction {
-    static vector_function_definitions getDefinitions();
+struct LeastFunction {
+    static constexpr const char* name = "LEAST";
+
+    static function_set getFunctionSet();
+};
+
+struct MakeDateFunction {
+    static constexpr const char* name = "MAKE_DATE";
+
+    static function_set getFunctionSet();
+};
+
+struct MonthNameFunction {
+    static constexpr const char* name = "MONTHNAME";
+
+    static function_set getFunctionSet();
+};
+
+struct CurrentDateFunction {
+    static constexpr const char* name = "CURRENT_DATE";
+
+    static function_set getFunctionSet();
+};
+
+struct CurrentTimestampFunction {
+    static constexpr const char* name = "CURRENT_TIMESTAMP";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

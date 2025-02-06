@@ -1,42 +1,131 @@
 #pragma once
 
-#include "binder/query/reading_clause/query_graph.h"
-#include "bound_create_info.h"
+#include "binder/query/query_graph.h"
+#include "bound_insert_info.h"
 #include "bound_set_info.h"
 #include "bound_updating_clause.h"
 
 namespace kuzu {
 namespace binder {
 
-class BoundMergeClause : public BoundUpdatingClause {
+class BoundMergeClause final : public BoundUpdatingClause {
 public:
-    BoundMergeClause(std::unique_ptr<QueryGraphCollection> queryGraphCollection,
-        std::vector<std::unique_ptr<BoundCreateInfo>> createInfos)
-        : BoundUpdatingClause{common::ClauseType::MERGE},
-          queryGraphCollection{std::move(queryGraphCollection)}, createInfos{
-                                                                     std::move(createInfos)} {}
-    BoundMergeClause(const BoundMergeClause& other);
+    BoundMergeClause(std::shared_ptr<Expression> existenceMark,
+        std::shared_ptr<Expression> distinctMark, QueryGraphCollection queryGraphCollection,
+        std::shared_ptr<Expression> predicate, std::vector<BoundInsertInfo> insertInfos)
+        : BoundUpdatingClause{common::ClauseType::MERGE}, existenceMark{std::move(existenceMark)},
+          distinctMark{std::move(distinctMark)},
+          queryGraphCollection{std::move(queryGraphCollection)}, predicate{std::move(predicate)},
+          insertInfos{std::move(insertInfos)} {}
 
-    inline void addOnMatchSetPropertyInfo(std::unique_ptr<BoundSetPropertyInfo> setPropertyInfo) {
+    std::shared_ptr<Expression> getExistenceMark() const { return existenceMark; }
+    std::shared_ptr<Expression> getDistinctMark() const { return distinctMark; }
+
+    const QueryGraphCollection* getQueryGraphCollection() const { return &queryGraphCollection; }
+    bool hasPredicate() const { return predicate != nullptr; }
+    std::shared_ptr<Expression> getPredicate() const { return predicate; }
+
+    const std::vector<BoundInsertInfo>& getInsertInfosRef() const { return insertInfos; }
+    const std::vector<BoundSetPropertyInfo>& getOnMatchSetInfosRef() const {
+        return onMatchSetPropertyInfos;
+    }
+    const std::vector<BoundSetPropertyInfo>& getOnCreateSetInfosRef() const {
+        return onCreateSetPropertyInfos;
+    }
+
+    bool hasInsertNodeInfo() const {
+        return hasInsertInfo(
+            [](const BoundInsertInfo& info) { return info.tableType == common::TableType::NODE; });
+    }
+    std::vector<const BoundInsertInfo*> getInsertNodeInfos() const {
+        return getInsertInfos(
+            [](const BoundInsertInfo& info) { return info.tableType == common::TableType::NODE; });
+    }
+    bool hasInsertRelInfo() const {
+        return hasInsertInfo(
+            [](const BoundInsertInfo& info) { return info.tableType == common::TableType::REL; });
+    }
+    std::vector<const BoundInsertInfo*> getInsertRelInfos() const {
+        return getInsertInfos(
+            [](const BoundInsertInfo& info) { return info.tableType == common::TableType::REL; });
+    }
+
+    bool hasOnMatchSetNodeInfo() const {
+        return hasOnMatchSetInfo([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::NODE;
+        });
+    }
+    std::vector<BoundSetPropertyInfo> getOnMatchSetNodeInfos() const {
+        return getOnMatchSetInfos([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::NODE;
+        });
+    }
+    bool hasOnMatchSetRelInfo() const {
+        return hasOnMatchSetInfo([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::REL;
+        });
+    }
+    std::vector<BoundSetPropertyInfo> getOnMatchSetRelInfos() const {
+        return getOnMatchSetInfos([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::REL;
+        });
+    }
+
+    bool hasOnCreateSetNodeInfo() const {
+        return hasOnCreateSetInfo([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::NODE;
+        });
+    }
+    std::vector<BoundSetPropertyInfo> getOnCreateSetNodeInfos() const {
+        return getOnCreateSetInfos([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::NODE;
+        });
+    }
+    bool hasOnCreateSetRelInfo() const {
+        return hasOnCreateSetInfo([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::REL;
+        });
+    }
+    std::vector<BoundSetPropertyInfo> getOnCreateSetRelInfos() const {
+        return getOnCreateSetInfos([](const BoundSetPropertyInfo& info) {
+            return info.tableType == common::TableType::REL;
+        });
+    }
+
+    void addOnMatchSetPropertyInfo(BoundSetPropertyInfo setPropertyInfo) {
         onMatchSetPropertyInfos.push_back(std::move(setPropertyInfo));
     }
-    inline void addOnCreateSetPropertyInfo(std::unique_ptr<BoundSetPropertyInfo> setPropertyInfo) {
+    void addOnCreateSetPropertyInfo(BoundSetPropertyInfo setPropertyInfo) {
         onCreateSetPropertyInfos.push_back(std::move(setPropertyInfo));
     }
 
-    std::unique_ptr<BoundUpdatingClause> copy() final {
-        return std::make_unique<BoundMergeClause>(*this);
-    }
+private:
+    bool hasInsertInfo(const std::function<bool(const BoundInsertInfo& info)>& check) const;
+    std::vector<const BoundInsertInfo*> getInsertInfos(
+        const std::function<bool(const BoundInsertInfo& info)>& check) const;
+
+    bool hasOnMatchSetInfo(
+        const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
+    std::vector<BoundSetPropertyInfo> getOnMatchSetInfos(
+        const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
+
+    bool hasOnCreateSetInfo(
+        const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
+    std::vector<BoundSetPropertyInfo> getOnCreateSetInfos(
+        const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
 
 private:
+    std::shared_ptr<Expression> existenceMark;
+    std::shared_ptr<Expression> distinctMark;
     // Pattern to match.
-    std::unique_ptr<QueryGraphCollection> queryGraphCollection;
+    QueryGraphCollection queryGraphCollection;
+    std::shared_ptr<Expression> predicate;
     // Pattern to create on match failure.
-    std::vector<std::unique_ptr<BoundCreateInfo>> createInfos;
+    std::vector<BoundInsertInfo> insertInfos;
     // Update on match
-    std::vector<std::unique_ptr<BoundSetPropertyInfo>> onMatchSetPropertyInfos;
+    std::vector<BoundSetPropertyInfo> onMatchSetPropertyInfos;
     // Update on create
-    std::vector<std::unique_ptr<BoundSetPropertyInfo>> onCreateSetPropertyInfos;
+    std::vector<BoundSetPropertyInfo> onCreateSetPropertyInfos;
 };
 
 } // namespace binder

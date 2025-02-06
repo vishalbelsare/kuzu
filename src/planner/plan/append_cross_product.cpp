@@ -1,21 +1,42 @@
-#include "planner/join_order_enumerator.h"
-#include "planner/logical_plan/logical_operator/logical_cross_product.h"
-#include "planner/query_planner.h"
+#include "planner/operator/logical_cross_product.h"
+#include "planner/planner.h"
+
+using namespace kuzu::binder;
+using namespace kuzu::common;
 
 namespace kuzu {
 namespace planner {
 
-void JoinOrderEnumerator::appendCrossProduct(
-    common::AccumulateType accumulateType, LogicalPlan& probePlan, LogicalPlan& buildPlan) {
-    auto crossProduct = make_shared<LogicalCrossProduct>(
-        accumulateType, probePlan.getLastOperator(), buildPlan.getLastOperator());
+void Planner::appendCrossProduct(const LogicalPlan& probePlan, const LogicalPlan& buildPlan,
+    LogicalPlan& resultPlan) {
+    appendCrossProduct(AccumulateType::REGULAR, nullptr /* mark */, probePlan, buildPlan,
+        resultPlan);
+}
+
+void Planner::appendOptionalCrossProduct(std::shared_ptr<Expression> mark,
+    const LogicalPlan& probePlan, const LogicalPlan& buildPlan, LogicalPlan& resultPlan) {
+    appendCrossProduct(AccumulateType::OPTIONAL_, mark, probePlan, buildPlan, resultPlan);
+}
+
+void Planner::appendAccOptionalCrossProduct(std::shared_ptr<Expression> mark,
+    LogicalPlan& probePlan, const LogicalPlan& buildPlan, LogicalPlan& resultPlan) {
+    KU_ASSERT(probePlan.hasUpdate());
+    tryAppendAccumulate(probePlan);
+    appendCrossProduct(AccumulateType::OPTIONAL_, mark, probePlan, buildPlan, resultPlan);
+    auto& sipInfo = resultPlan.getLastOperator()->cast<LogicalCrossProduct>().getSIPInfoUnsafe();
+    sipInfo.direction = SIPDirection::PROBE_TO_BUILD;
+}
+
+void Planner::appendCrossProduct(AccumulateType accumulateType, std::shared_ptr<Expression> mark,
+    const LogicalPlan& probePlan, const LogicalPlan& buildPlan, LogicalPlan& resultPlan) {
+    auto crossProduct = make_shared<LogicalCrossProduct>(accumulateType, mark,
+        probePlan.getLastOperator(), buildPlan.getLastOperator(),
+        cardinalityEstimator.estimateCrossProduct(probePlan.getLastOperatorRef(),
+            buildPlan.getLastOperatorRef()));
     crossProduct->computeFactorizedSchema();
     // update cost
-    probePlan.setCost(probePlan.getCardinality() + buildPlan.getCardinality());
-    // update cardinality
-    probePlan.setCardinality(
-        queryPlanner->cardinalityEstimator->estimateCrossProduct(probePlan, buildPlan));
-    probePlan.setLastOperator(std::move(crossProduct));
+    resultPlan.setCost(probePlan.getCardinality() + buildPlan.getCardinality());
+    resultPlan.setLastOperator(std::move(crossProduct));
 }
 
 } // namespace planner

@@ -1,0 +1,147 @@
+-DATASET CSV tinysnb
+
+--
+
+-CASE BasicAlgorithm
+-STATEMENT CALL create_project_graph('PK', ['person'], ['knows'])
+---- ok
+-STATEMENT CALL create_project_graph('PK', [], [])
+---- error
+Runtime exception: Project graph PK already exists.
+-STATEMENT CALL create_project_graph('dummy', ['knows'], [])
+---- error
+Binder exception: Expect catalog entry type NODE_TABLE_ENTRY but got REL_TABLE_ENTRY.
+-STATEMENT CALL create_project_graph('PKWO', ['person', 'organisation'], ['knows', 'workAt'])
+---- ok
+-STATEMENT MATCH (a:person) WHERE a.ID < 6
+           CALL VAR_LEN_JOINS('PK', a, 1, 2, "FWD")
+           RETURN a.fName, COUNT(*);
+---- 4
+Alice|12
+Bob|12
+Carol|12
+Dan|12
+-STATEMENT CALL drop_project_graph('dummy')
+---- error
+Runtime exception: Project graph dummy does not exists.
+-STATEMENT CALL drop_project_graph('PK')
+---- ok
+-STATEMENT CALL create_project_graph('PK', ['person'], ['knows'])
+---- ok
+-STATEMENT MATCH (a:person) WHERE a.ID < 6
+           CALL VAR_LEN_JOINS('PK', a, 1, 2, "BWD")
+           RETURN a.fName, COUNT(*);
+---- 4
+Alice|12
+Bob|12
+Carol|12
+Dan|12
+-STATEMENT MATCH (a:person) WHERE a.ID < 6
+           CALL VAR_LEN_JOINS('PK', a, 1, 2, "BOTH")
+           RETURN a.fName, COUNT(*);
+---- 4
+Alice|42
+Bob|42
+Carol|42
+Dan|42
+-STATEMENT MATCH (a:person) WHERE a.ID = 0
+           CALL SINGLE_SP_DESTINATIONS('PK', a, 2, "FWD")
+           RETURN a.fName, node.name, length;
+---- error
+Binder exception: Cannot find property name for node.
+-STATEMENT MATCH (a:person) WHERE a.ID = 0
+           CALL SINGLE_SP_DESTINATIONS('PK', a, 2, "X")
+           RETURN a.fName, node.name, length;
+---- error
+Runtime exception: Cannot parse X as ExtendDirection.
+-STATEMENT MATCH (a:person) WHERE a.ID = 0
+           CALL SINGLE_SP_DESTINATIONS('PK', a, 2, "FWD")
+           RETURN a.fName, node.fName, length;
+---- 3
+Alice|Bob|1
+Alice|Carol|1
+Alice|Dan|1
+-STATEMENT MATCH (a:person) WHERE a.ID = 0
+           CALL SINGLE_SP_DESTINATIONS('PKWO', a, 2, "FWD")
+           RETURN a.fName, node.fName, node.name, length;
+---- 5
+Alice|Bob||1
+Alice|Carol||1
+Alice|Dan||1
+Alice||CsWork|2
+Alice||DEsWork|2
+-STATEMENT CALL weakly_connected_component('PK') RETURN node.fName, group_id;
+---- 8
+Alice|0
+Bob|0
+Carol|0
+Dan|0
+Elizabeth|4
+Farooq|4
+Greg|4
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|7
+#-STATEMENT CALL weakly_connected_component('PKWO') RETURN node.fName, node.name, group_id;
+#---- 11
+#Alice||1
+#Bob||1
+#Carol||1
+#Dan||1
+#Elizabeth||1
+#Farooq||1
+#Greg||1
+#Hubert Blaine Wolfeschlegelsteinhausenbergerdorff||10
+#|ABFsUni|0
+#|CsWork|1
+#|DEsWork|1
+-STATEMENT CALL k_core_decomposition('PK') RETURN node.fName, k_degree;
+---- 8
+Alice|6
+Bob|6
+Carol|6
+Dan|6
+Elizabeth|1
+Farooq|1
+Greg|1
+Hubert Blaine Wolfeschlegelsteinhausenbergerdorff|0
+
+-STATEMENT CALL enable_gds = true;
+---- ok
+-STATEMENT MATCH p = (a:person)-[e:knows*1..2]->(b:person) WHERE a.ID = 0 RETURN properties(nodes(p),'fName'), properties(rels(p), 'date'), properties(rels(e), '_src'), properties(rels(e), '_dst'), a.fName, b.fName
+---- 12
+[Alice,Bob,Alice]|[2021-06-30,2021-06-30]|[0:0,0:1]|[0:1,0:0]|Alice|Alice
+[Alice,Bob,Carol]|[2021-06-30,1950-05-14]|[0:0,0:1]|[0:1,0:2]|Alice|Carol
+[Alice,Bob,Dan]|[2021-06-30,1950-05-14]|[0:0,0:1]|[0:1,0:3]|Alice|Dan
+[Alice,Bob]|[2021-06-30]|[0:0]|[0:1]|Alice|Bob
+[Alice,Carol,Alice]|[2021-06-30,2021-06-30]|[0:0,0:2]|[0:2,0:0]|Alice|Alice
+[Alice,Carol,Bob]|[2021-06-30,1950-05-14]|[0:0,0:2]|[0:2,0:1]|Alice|Bob
+[Alice,Carol,Dan]|[2021-06-30,2000-01-01]|[0:0,0:2]|[0:2,0:3]|Alice|Dan
+[Alice,Carol]|[2021-06-30]|[0:0]|[0:2]|Alice|Carol
+[Alice,Dan,Alice]|[2021-06-30,2021-06-30]|[0:0,0:3]|[0:3,0:0]|Alice|Alice
+[Alice,Dan,Bob]|[2021-06-30,1950-05-14]|[0:0,0:3]|[0:3,0:1]|Alice|Bob
+[Alice,Dan,Carol]|[2021-06-30,2000-01-01]|[0:0,0:3]|[0:3,0:2]|Alice|Carol
+[Alice,Dan]|[2021-06-30]|[0:0]|[0:3]|Alice|Dan
+-STATEMENT MATCH p = (a:person)-[e:knows* 3..3]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+---- 1
+27
+-STATEMENT MATCH p = (a:person)-[e:knows* TRAIL 3..3]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+---- 1
+24
+# 3 * 3 * 2
+-STATEMENT MATCH p = (a:person)-[e:knows* ACYCLIC 4..4]->(b:person) WHERE a.ID = 0 RETURN COUNT(*)
+---- 1
+54
+
+-STATEMENT MATCH p = (a:person)-[e:knows*1..2]->(b:person) WHERE a.ID = 0 RETURN properties(nodes(p),'fName'), properties(rels(p), 'date'), properties(rels(e), '_src'), properties(rels(e), '_dst'), a.fName, b.fName
+---- 12
+[Alice,Bob,Alice]|[2021-06-30,2021-06-30]|[0:0,0:1]|[0:1,0:0]|Alice|Alice
+[Alice,Bob,Carol]|[2021-06-30,1950-05-14]|[0:0,0:1]|[0:1,0:2]|Alice|Carol
+[Alice,Bob,Dan]|[2021-06-30,1950-05-14]|[0:0,0:1]|[0:1,0:3]|Alice|Dan
+[Alice,Bob]|[2021-06-30]|[0:0]|[0:1]|Alice|Bob
+[Alice,Carol,Alice]|[2021-06-30,2021-06-30]|[0:0,0:2]|[0:2,0:0]|Alice|Alice
+[Alice,Carol,Bob]|[2021-06-30,1950-05-14]|[0:0,0:2]|[0:2,0:1]|Alice|Bob
+[Alice,Carol,Dan]|[2021-06-30,2000-01-01]|[0:0,0:2]|[0:2,0:3]|Alice|Dan
+[Alice,Carol]|[2021-06-30]|[0:0]|[0:2]|Alice|Carol
+[Alice,Dan,Alice]|[2021-06-30,2021-06-30]|[0:0,0:3]|[0:3,0:0]|Alice|Alice
+[Alice,Dan,Bob]|[2021-06-30,1950-05-14]|[0:0,0:3]|[0:3,0:1]|Alice|Bob
+[Alice,Dan,Carol]|[2021-06-30,2000-01-01]|[0:0,0:3]|[0:3,0:2]|Alice|Carol
+[Alice,Dan]|[2021-06-30]|[0:0]|[0:3]|Alice|Dan

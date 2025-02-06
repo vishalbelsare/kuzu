@@ -1,6 +1,7 @@
 #pragma once
 
 #include "base_regexp_function.h"
+#include "common/exception/runtime.h"
 #include "common/vector/value_vector.h"
 #include "re2.h"
 
@@ -19,8 +20,8 @@ struct RegexpExtractAll : BaseRegexpOperation {
         for (const auto& match : matches) {
             common::ku_string_t kuString;
             copyToKuzuString(match, kuString, *resultDataVector);
-            resultDataVector->copyFromVectorData(
-                resultValues, resultDataVector, reinterpret_cast<uint8_t*>(&kuString));
+            resultDataVector->copyFromVectorData(resultValues, resultDataVector,
+                reinterpret_cast<uint8_t*>(&kuString));
             resultValues += numBytesPerValue;
         }
     }
@@ -31,9 +32,9 @@ struct RegexpExtractAll : BaseRegexpOperation {
         operation(value, pattern, defaultGroup, result, resultVector);
     }
 
-    static std::vector<std::string> regexExtractAll(
-        const std::string& value, const std::string& pattern, std::int64_t& group) {
-        RE2 regex(parseCypherPatten(pattern));
+    static std::vector<std::string> regexExtractAll(const std::string& value,
+        const std::string& pattern, std::int64_t& group) {
+        RE2 regex(parseCypherPattern(pattern));
         auto submatchCount = regex.NumberOfCapturingGroups() + 1;
         if (group >= submatchCount) {
             throw common::RuntimeException("Regex match group index is out of range");

@@ -1,10 +1,7 @@
 #pragma once
 
-#include "binder/bound_statement_result.h"
 #include "main/kuzu.h"
 #include "node_connection.h"
-#include "planner/logical_plan/logical_plan.h"
-#include "processor/result/factorized_table.h"
 #include <napi.h>
 
 using namespace kuzu::main;
@@ -15,15 +12,14 @@ class NodePreparedStatement : public Napi::ObjectWrap<NodePreparedStatement> {
 
 public:
     static Napi::Object Init(Napi::Env env, Napi::Object exports);
-    NodePreparedStatement(const Napi::CallbackInfo& info);
-    ~NodePreparedStatement() = default;
+    explicit NodePreparedStatement(const Napi::CallbackInfo& info);
+    ~NodePreparedStatement() override = default;
 
 private:
     Napi::Value InitAsync(const Napi::CallbackInfo& info);
     void InitCppPreparedStatement();
     Napi::Value IsSuccess(const Napi::CallbackInfo& info);
     Napi::Value GetErrorMessage(const Napi::CallbackInfo& info);
-
 
 private:
     std::shared_ptr<PreparedStatement> preparedStatement;
@@ -33,16 +29,18 @@ private:
 
 class PreparedStatementInitAsyncWorker : public Napi::AsyncWorker {
 public:
-    PreparedStatementInitAsyncWorker(
-        Napi::Function& callback, NodePreparedStatement* nodePreparedStatement)
+    PreparedStatementInitAsyncWorker(Napi::Function& callback,
+        NodePreparedStatement* nodePreparedStatement)
         : AsyncWorker(callback), nodePreparedStatement(nodePreparedStatement) {}
 
-    ~PreparedStatementInitAsyncWorker() = default;
+    ~PreparedStatementInitAsyncWorker() override = default;
 
     inline void Execute() override {
         try {
             nodePreparedStatement->InitCppPreparedStatement();
-        } catch (const std::exception& exc) { SetError(std::string(exc.what())); }
+        } catch (const std::exception& exc) {
+            SetError(std::string(exc.what()));
+        }
     }
 
     inline void OnOK() override { Callback().Call({Env().Null()}); }

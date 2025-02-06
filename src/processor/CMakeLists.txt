@@ -1,10 +1,10 @@
-add_subdirectory(mapper)
+add_subdirectory(map)
 add_subdirectory(operator)
 add_subdirectory(result)
 
 add_library(kuzu_processor
         OBJECT
-        physical_plan.cpp
+        warning_context.cpp
         processor.cpp
         processor_task.cpp)
 

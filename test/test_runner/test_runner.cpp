@@ -2,8 +2,13 @@
 
 #include <fstream>
 
+#include "common/exception/test.h"
+#include "common/md5.h"
 #include "common/string_utils.h"
+#include "gtest/gtest.h"
+#include "planner/operator/logical_plan.h"
 #include "spdlog/spdlog.h"
+#include "test_helper/test_helper.h"
 
 using namespace kuzu::main;
 using namespace kuzu::common;
@@ -11,125 +16,262 @@ using namespace kuzu::common;
 namespace kuzu {
 namespace testing {
 
-void TestRunner::runTest(
-    const std::vector<std::unique_ptr<TestStatement>>& statements, Connection& conn) {
-    for (auto& statement : statements) {
-        initializeConnection(statement.get(), conn);
-        if (statement->isBeginWriteTransaction) {
-            conn.beginWriteTransaction();
-            continue;
-        }
-        ASSERT_TRUE(testStatement(statement.get(), conn));
-    }
+template<typename T>
+static bool precisionEqual(T x, T y) {
+    // epsilon() gives gap size (ULP, unit in the last place) in interval [1, 2)
+    // scale it to the gap size in interval [2^e, 2^{e+1}). e is min exponent
+    const T m = std::min(std::fabs(x), std::fabs(y));
+
+    // Subnormal numbers have fixed exponent, which is `min_exponent - 1`.
+    const int exp = m < std::numeric_limits<T>::min() ? std::numeric_limits<T>::min_exponent - 1 :
+                                                        std::ilogb(m);
+
+    // Equal if abs difference is within 1 ULP
+    return std::fabs(x - y) <= std::ldexp(std::numeric_limits<T>::epsilon(), exp);
 }
 
-void TestRunner::initializeConnection(TestStatement* statement, Connection& conn) {
+void TestRunner::runTest(TestStatement* statement, Connection& conn,
+    const std::string& databasePath) {
+    // for batch statements
+    if (!statement->batchStatmentsCSVFile.empty()) {
+        TestHelper::executeScript(statement->batchStatmentsCSVFile, conn);
+        return;
+    }
+    // for normal statement
     spdlog::info("DEBUG LOG: {}", statement->logMessage);
     spdlog::info("QUERY: {}", statement->query);
     conn.setMaxNumThreadForExec(statement->numThreads);
+    testStatement(statement, conn, databasePath);
 }
 
-bool TestRunner::testStatement(TestStatement* statement, Connection& conn) {
-    std::unique_ptr<PreparedStatement> preparedStatement;
-    if (statement->encodedJoin.empty()) {
-        preparedStatement = conn.prepareNoLock(statement->query, statement->enumerate);
-    } else {
-        preparedStatement = conn.prepareNoLock(statement->query, true, statement->encodedJoin);
+void replaceEnv(std::string& queryToReplace, const std::string& env) {
+    const auto envValue = std::getenv(env.c_str()); // NOLINT(*-mt-unsafe);
+    if (envValue != nullptr) {
+        StringUtils::replaceAll(queryToReplace, "${" + env + "}", envValue);
     }
-    // Check for wrong statements
-    if (!statement->expectedError && !preparedStatement->isSuccess()) {
-        spdlog::error(preparedStatement->getErrorMessage());
-        return false;
-    }
-    return checkLogicalPlans(preparedStatement, statement, conn);
 }
 
-bool TestRunner::checkLogicalPlans(std::unique_ptr<PreparedStatement>& preparedStatement,
-    TestStatement* statement, Connection& conn) {
-    auto numPlans = preparedStatement->logicalPlans.size();
-    auto numPassedPlans = 0u;
-    if (numPlans == 0) {
-        return checkLogicalPlan(preparedStatement, statement, conn, 0);
-    }
-    for (auto i = 0u; i < numPlans; ++i) {
-        if (checkLogicalPlan(preparedStatement, statement, conn, i)) {
-            numPassedPlans++;
-        }
-    }
-    return numPassedPlans == numPlans;
+void TestRunner::testStatement(TestStatement* statement, Connection& conn,
+    const std::string& databasePath) {
+    StringUtils::replaceAll(statement->query, "${DATABASE_PATH}", databasePath);
+    StringUtils::replaceAll(statement->query, "${KUZU_ROOT_DIRECTORY}", KUZU_ROOT_DIRECTORY);
+    replaceEnv(statement->query, "UW_S3_ACCESS_KEY_ID");
+    replaceEnv(statement->query, "UW_S3_SECRET_ACCESS_KEY");
+    replaceEnv(statement->query, "AWS_S3_ACCESS_KEY_ID");
+    replaceEnv(statement->query, "AWS_S3_SECRET_ACCESS_KEY");
+    replaceEnv(statement->query, "RUN_ID");
+    const auto actualResult = conn.query(statement->query);
+    QueryResult* currentQueryResult = actualResult.get();
+    idx_t resultIdx = 0u;
+    do {
+        checkLogicalPlan(conn, currentQueryResult, statement, resultIdx);
+        currentQueryResult = currentQueryResult->getNextQueryResult();
+        resultIdx++;
+    } while (currentQueryResult);
 }
 
-bool TestRunner::checkLogicalPlan(std::unique_ptr<PreparedStatement>& preparedStatement,
-    TestStatement* statement, Connection& conn, uint32_t planIdx) {
-    auto result = conn.executeAndAutoCommitIfNecessaryNoLock(preparedStatement.get(), planIdx);
-    if (statement->expectedError) {
-        std::string expectedError = StringUtils::rtrim(result->getErrorMessage());
-        if (statement->errorMessage == expectedError) {
-            return true;
-        }
-        spdlog::info("EXPECTED ERROR: {}", expectedError);
-    } else if (statement->expectedOk && result->isSuccess()) {
-        return true;
-    } else {
-        auto planStr = preparedStatement->logicalPlans[planIdx]->toString();
-        if (checkPlanResult(result, statement, planStr, planIdx)) {
-            return true;
-        }
+void TestRunner::checkLogicalPlan(Connection& conn, QueryResult* queryResult,
+    TestStatement* statement, size_t resultIdx) {
+    const TestQueryResult& testAnswer =
+        statement->result[std::min(resultIdx, statement->result.size() - 1)];
+    std::string actualError;
+    switch (testAnswer.type) {
+    case ResultType::OK: {
+        ASSERT_TRUE(queryResult->isSuccess())
+            << "EXPECT OK BUT GOT ERROR: " << queryResult->getErrorMessage();
+    } break;
+    case ResultType::ERROR_MSG: {
+        const std::string expectedError = StringUtils::rtrim(testAnswer.expectedResult[0]);
+        EXPECT_FALSE(queryResult->isSuccess());
+        actualError = StringUtils::rtrim(queryResult->getErrorMessage());
+        ASSERT_EQ(actualError, expectedError);
+    } break;
+    case ResultType::ERROR_REGEX: {
+        actualError = StringUtils::rtrim(queryResult->getErrorMessage());
+        ASSERT_TRUE(std::regex_match(actualError, std::regex(testAnswer.expectedResult[0])))
+            << "Expected error to match regex: " << testAnswer.expectedResult[0]
+            << " actual error: " << actualError;
+    } break;
+    default: {
+        ASSERT_TRUE(queryResult->isSuccess())
+            << "Unexpected error for query: " << queryResult->getErrorMessage();
+        checkPlanResult(conn, queryResult, statement, resultIdx);
     }
-    return false;
+    }
 }
 
-bool TestRunner::checkPlanResult(std::unique_ptr<QueryResult>& result, TestStatement* statement,
-    const std::string& planStr, uint32_t planIdx) {
-    std::vector<std::string> resultTuples =
-        TestRunner::convertResultToString(*result, statement->checkOutputOrder);
-
-    if (!statement->expectedTuplesCSVFile.empty()) {
-        std::ifstream expectedTuplesFile(statement->expectedTuplesCSVFile);
+void TestRunner::checkPlanResult(Connection& conn, QueryResult* result, TestStatement* statement,
+    size_t resultIdx) {
+    spdlog::info("Query execution took {}ms.", result->getQuerySummary()->getExecutionTime());
+    TestQueryResult& testAnswer = statement->result[resultIdx];
+    if (testAnswer.type == ResultType::CSV_FILE) {
+        std::ifstream expectedTuplesFile(testAnswer.expectedResult[0]);
         if (!expectedTuplesFile.is_open()) {
-            throw TestException("Cannot open file: " + statement->expectedTuplesCSVFile);
+            throw TestException("Cannot open file: " + testAnswer.expectedResult[0]);
         }
         std::string line;
+        testAnswer.expectedResult.clear();
         while (std::getline(expectedTuplesFile, line)) {
-            statement->expectedTuples.push_back(line);
+            testAnswer.expectedResult.push_back(line);
+        }
+        if (testAnswer.expectedResult.size() != testAnswer.numTuples) {
+            outputFailedPlan(conn, statement);
+            spdlog::info("TUPLE COUNT NOT MATCHING:");
+            spdlog::info("    EXPECTED {} TUPLES IN ANSWER FILE.", testAnswer.numTuples);
+            spdlog::info("    FOUND {} TUPLES IN ANSWER FILE.", testAnswer.expectedResult.size());
+            return;
         }
         if (!statement->checkOutputOrder) {
-            sort(statement->expectedTuples.begin(), statement->expectedTuples.end());
+            std::sort(testAnswer.expectedResult.begin(), testAnswer.expectedResult.end());
         }
     }
+    std::vector<std::string> resultTuples =
+        convertResultToString(*result, statement->checkOutputOrder, statement->checkColumnNames);
+    uint64_t actualNumTuples = result->getNumTuples();
+    if (statement->checkColumnNames) {
+        actualNumTuples++;
+    }
+    EXPECT_EQ(resultTuples.size(), actualNumTuples);
+    if (testAnswer.type == ResultType::HASH) {
+        std::string resultHash = convertResultToMD5Hash(*result, statement->checkOutputOrder,
+            statement->checkColumnNames);
 
-    if (resultTuples.size() == result->getNumTuples() &&
-        resultTuples == statement->expectedTuples) {
-        spdlog::info(
-            "PLAN{} PASSED in {}ms.", planIdx, result->getQuerySummary()->getExecutionTime());
-        return true;
+        if (resultHash != testAnswer.expectedResult[0]) {
+            outputFailedPlan(conn, statement);
+            spdlog::info("RESULT: \n");
+            for (auto& tuple : resultTuples) {
+                spdlog::info(tuple);
+            }
+            ASSERT_EQ(resultHash, testAnswer.expectedResult[0]);
+        }
+    } else if (statement->checkPrecision) {
+        ASSERT_TRUE(statement->checkOutputOrder)
+            << "CHECK_ORDER MUST BE ENABLED FOR CHECK_PRECISION";
+        EXPECT_TRUE(resultTuples.size() == testAnswer.numTuples);
+        ASSERT_TRUE(TestRunner::checkResultNumeric(*result, statement, resultIdx));
+    } else if (resultTuples == testAnswer.expectedResult) {
+        spdlog::info("QUERY PASSED.");
     } else {
-        spdlog::error("PLAN{} NOT PASSED.", planIdx);
-        spdlog::info("PLAN: \n{}", planStr);
-        spdlog::info("RESULT: \n");
-        for (auto& tuple : resultTuples) {
-            spdlog::info(tuple);
+        outputFailedPlan(conn, statement);
+        if (resultTuples.size() == testAnswer.numTuples) {
+            for (auto& tuple : resultTuples) {
+                spdlog::info(tuple);
+            }
+            for (auto i = 0u; i < resultTuples.size(); i++) {
+                EXPECT_EQ(resultTuples[i], testAnswer.expectedResult[i])
+                    << "Result tuple at index " << i << " did not match the expected value";
+            }
+        } else {
+            EXPECT_EQ(resultTuples.size(), actualNumTuples);
+            ASSERT_EQ(resultTuples, testAnswer.expectedResult);
         }
     }
-    return false;
 }
 
-std::vector<std::string> TestRunner::convertResultToString(
-    QueryResult& queryResult, bool checkOutputOrder) {
-    std::vector<std::string> actualOutput;
+void TestRunner::outputFailedPlan(Connection& conn, const TestStatement* statement) {
+    spdlog::error("QUERY FAILED.");
+    const auto plan = getLogicalPlan(statement->query, conn);
+    if (plan) {
+        spdlog::info("PLAN: \n{}", plan->toString());
+    }
+}
+
+bool TestRunner::checkResultNumeric(QueryResult& queryResult, const TestStatement* statement,
+    size_t resultIdx) {
+    queryResult.resetIterator();
+    const std::vector<LogicalType> dataTypes = queryResult.getColumnDataTypes();
+    const TestQueryResult& testAnswer = statement->result[resultIdx];
+    int rowIdx = statement->checkColumnNames;
     while (queryResult.hasNext()) {
-        auto tuple = queryResult.getNext();
+        const auto actualTuple = queryResult.getNext();
+        auto testTuple = StringUtils::split(testAnswer.expectedResult[rowIdx], "|");
+        if (actualTuple->len() != testTuple.size()) {
+            return false;
+        }
+        for (uint32_t i = 0; i < dataTypes.size(); i++) {
+            const auto curValue = actualTuple->getValue(i);
+            switch (dataTypes[i].getLogicalTypeID()) {
+            case LogicalTypeID::FLOAT: {
+                if (!precisionEqual(curValue->getValue<float>(), std::stof(testTuple[i]))) {
+                    spdlog::error("Mismatched float value. Actual value: {}, Expected value: {}",
+                        curValue->getValue<float>(), std::stof(testTuple[i]));
+                    return false;
+                }
+                break;
+            }
+            case LogicalTypeID::DOUBLE: {
+                if (!precisionEqual(curValue->getValue<double>(), std::stod(testTuple[i]))) {
+                    spdlog::error("Mismatched double value. Actual value: {}, Expected value: {}",
+                        curValue->getValue<double>(), std::stod(testTuple[i]));
+                    return false;
+                }
+                break;
+            }
+            default: {
+                if (curValue->toString() != testTuple[i]) {
+                    spdlog::error("Mismatched value. Actual value: {}, Expected value: {}",
+                        curValue->toString(), testTuple[i]);
+                    return false;
+                }
+                break;
+            }
+            }
+        }
+        rowIdx++;
+    }
+    return true;
+}
+
+std::vector<std::string> TestRunner::convertResultToString(QueryResult& queryResult,
+    bool checkOutputOrder, bool checkColumnNames) {
+    std::vector<std::string> actualOutput;
+    if (checkColumnNames) {
+        actualOutput.push_back(convertResultColumnsToString(queryResult));
+    }
+    while (queryResult.hasNext()) {
+        const auto tuple = queryResult.getNext();
         actualOutput.push_back(tuple->toString(std::vector<uint32_t>(tuple->len(), 0)));
     }
     if (!checkOutputOrder) {
-        sort(actualOutput.begin(), actualOutput.end());
+        std::sort(actualOutput.begin(), actualOutput.end());
+        // NOTE: If you wish to change this sorting in a
+        // way that alters its result, you may break existing
+        // hashed test cases
     }
     return actualOutput;
 }
 
-std::unique_ptr<planner::LogicalPlan> TestRunner::getLogicalPlan(
-    const std::string& query, kuzu::main::Connection& conn) {
-    return std::move(conn.prepare(query)->logicalPlans[0]);
+std::string TestRunner::convertResultToMD5Hash(QueryResult& queryResult, bool checkOutputOrder,
+    bool checkColumnNames) {
+    queryResult.resetIterator();
+    MD5 hasher;
+    const std::vector<std::string> stringRep =
+        convertResultToString(queryResult, checkOutputOrder, checkColumnNames);
+    const std::string lineBreaker = "\n";
+    for (std::string line : stringRep) {
+        hasher.addToMD5(line.c_str(), line.size());
+        hasher.addToMD5(lineBreaker.c_str(), lineBreaker.size());
+    }
+    return std::string(hasher.finishMD5());
+}
+
+std::string TestRunner::convertResultColumnsToString(const QueryResult& queryResult) {
+    std::string columnsString;
+    const std::vector<std::string> columnNames = queryResult.getColumnNames();
+    for (auto i = 0ul; i < columnNames.size(); i++) {
+        if (i != 0) {
+            columnsString += "|";
+        }
+        columnsString += columnNames[i];
+    }
+    return columnsString;
+}
+
+std::unique_ptr<planner::LogicalPlan> TestRunner::getLogicalPlan(const std::string& query,
+    Connection& conn) {
+    const auto preparedStatement = conn.prepare(query);
+    KU_ASSERT(preparedStatement->isSuccess());
+    return std::move(preparedStatement->logicalPlan);
 }
 
 } // namespace testing

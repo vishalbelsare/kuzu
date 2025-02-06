@@ -6,48 +6,41 @@
 namespace kuzu {
 namespace binder {
 
-class BoundSetClause : public BoundUpdatingClause {
+class BoundSetClause final : public BoundUpdatingClause {
 public:
     BoundSetClause() : BoundUpdatingClause{common::ClauseType::SET} {}
-    BoundSetClause(const BoundSetClause& other);
 
-    inline void addInfo(std::unique_ptr<BoundSetPropertyInfo> info) {
-        infos.push_back(std::move(info));
-    }
-    inline const std::vector<std::unique_ptr<BoundSetPropertyInfo>>& getInfosRef() { return infos; }
+    void addInfo(BoundSetPropertyInfo info) { infos.push_back(std::move(info)); }
+    const std::vector<BoundSetPropertyInfo>& getInfos() const { return infos; }
 
-    inline bool hasNodeInfo() const {
+    bool hasNodeInfo() const {
         return hasInfo([](const BoundSetPropertyInfo& info) {
-            return info.updateTableType == UpdateTableType::NODE;
+            return info.tableType == common::TableType::NODE;
         });
     }
-    inline std::vector<BoundSetPropertyInfo*> getNodeInfos() const {
+    std::vector<BoundSetPropertyInfo> getNodeInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
-            return info.updateTableType == UpdateTableType::NODE;
+            return info.tableType == common::TableType::NODE;
         });
     }
-    inline bool hasRelInfo() const {
+    bool hasRelInfo() const {
         return hasInfo([](const BoundSetPropertyInfo& info) {
-            return info.updateTableType == UpdateTableType::REL;
+            return info.tableType == common::TableType::REL;
         });
     }
-    inline std::vector<BoundSetPropertyInfo*> getRelInfos() const {
+    std::vector<BoundSetPropertyInfo> getRelInfos() const {
         return getInfos([](const BoundSetPropertyInfo& info) {
-            return info.updateTableType == UpdateTableType::REL;
+            return info.tableType == common::TableType::REL;
         });
-    }
-
-    inline std::unique_ptr<BoundUpdatingClause> copy() final {
-        return std::make_unique<BoundSetClause>(*this);
     }
 
 private:
     bool hasInfo(const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
-    std::vector<BoundSetPropertyInfo*> getInfos(
+    std::vector<BoundSetPropertyInfo> getInfos(
         const std::function<bool(const BoundSetPropertyInfo& info)>& check) const;
 
 private:
-    std::vector<std::unique_ptr<BoundSetPropertyInfo>> infos;
+    std::vector<BoundSetPropertyInfo> infos;
 };
 
 } // namespace binder

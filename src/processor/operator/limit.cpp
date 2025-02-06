@@ -1,7 +1,13 @@
 #include "processor/operator/limit.h"
 
+#include "common/metric.h"
+
 namespace kuzu {
 namespace processor {
+
+std::string LimitPrintInfo::toString() const {
+    return "Limit: " + std::to_string(limitNum);
+}
 
 bool Limit::getNextTuplesInternal(ExecutionContext* context) {
     // end of execution due to no more input
@@ -19,8 +25,9 @@ bool Limit::getNextTuplesInternal(ExecutionContext* context) {
             // If all dataChunks are flat, numTupleAvailable = 1 which means numTupleProcessedBefore
             // = limitNumber. So execution is terminated in above if statement.
             auto& dataChunkToSelect = resultSet->dataChunks[dataChunkToSelectPos];
-            assert(!dataChunkToSelect->state->isFlat());
-            dataChunkToSelect->state->selVector->selectedSize = numTupleToProcessInCurrentResultSet;
+            KU_ASSERT(!dataChunkToSelect->state->isFlat());
+            dataChunkToSelect->state->getSelVectorUnsafe().setSelSize(
+                numTupleToProcessInCurrentResultSet);
             metrics->numOutputTuple.increase(numTupleToProcessInCurrentResultSet);
         }
     } else {

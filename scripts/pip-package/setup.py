@@ -8,7 +8,6 @@ from setuptools import setup, Extension
 from setuptools.command.build_ext import build_ext
 from setuptools.command.build_py import build_py as _build_py
 
-num_cores = multiprocessing.cpu_count()
 base_dir = os.path.dirname(__file__)
 
 with open(os.path.join(base_dir, 'kuzu-source', 'tools', 'python_api', 'requirements_dev.txt')) as f:
@@ -20,8 +19,15 @@ def _get_kuzu_version():
     with open(cmake_file) as f:
         for line in f:
             if line.startswith('project(Kuzu VERSION'):
-                return line.split(' ')[2].strip()
-
+                raw_version = line.split(' ')[2].strip()
+                version_nums = raw_version.split('.')
+                if len(version_nums) <= 3:
+                    return raw_version
+                else:
+                    dev_suffix = version_nums[3]
+                    version = '.'.join(version_nums[:3])
+                    version += ".dev%s" % dev_suffix
+                    return version
 
 kuzu_version = _get_kuzu_version()
 print("The version of this build is %s" % kuzu_version)
@@ -72,8 +78,15 @@ class CMakeBuild(build_ext):
         # Clean the build directory.
         subprocess.run(['make', 'clean'], check=True, cwd=build_dir)
 
+        try:
+            num_cores = int(os.environ['NUM_THREADS'])
+            self.announce("Using %d cores for building the native extension." % num_cores)
+        except:
+            self.announce("NUM_THREADS is not set. Using all available cores.")
+            num_cores = multiprocessing.cpu_count()
+
         # Build the native extension.
-        full_cmd = ['make', 'release', 'NUM_THREADS=%d' % num_cores]
+        full_cmd = ['make', 'python', 'NUM_THREADS=%d' % num_cores]
         subprocess.run(full_cmd, cwd=build_dir, check=True, env=env_vars)
         self.announce("Done building native extension.")
         self.announce("Copying native extension...")

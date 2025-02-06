@@ -6,27 +6,26 @@
 namespace kuzu {
 namespace binder {
 
-class BoundRegularQuery : public BoundStatement {
+class BoundRegularQuery final : public BoundStatement {
+
 public:
-    explicit BoundRegularQuery(
-        std::vector<bool> isUnionAll, std::unique_ptr<BoundStatementResult> statementResult)
+    explicit BoundRegularQuery(std::vector<bool> isUnionAll, BoundStatementResult statementResult)
         : BoundStatement{common::StatementType::QUERY, std::move(statementResult)},
           isUnionAll{std::move(isUnionAll)} {}
 
-    ~BoundRegularQuery() override = default;
-
-    inline void addSingleQuery(std::unique_ptr<NormalizedSingleQuery> singleQuery) {
+    void addSingleQuery(NormalizedSingleQuery singleQuery) {
         singleQueries.push_back(std::move(singleQuery));
     }
-    inline uint64_t getNumSingleQueries() const { return singleQueries.size(); }
-    inline NormalizedSingleQuery* getSingleQuery(uint32_t idx) const {
-        return singleQueries[idx].get();
+    uint64_t getNumSingleQueries() const { return singleQueries.size(); }
+    NormalizedSingleQuery* getSingleQueryUnsafe(common::idx_t idx) { return &singleQueries[idx]; }
+    const NormalizedSingleQuery* getSingleQuery(common::idx_t idx) const {
+        return &singleQueries[idx];
     }
 
-    inline bool getIsUnionAll(uint32_t idx) const { return isUnionAll[idx]; }
+    bool getIsUnionAll(common::idx_t idx) const { return isUnionAll[idx]; }
 
 private:
-    std::vector<std::unique_ptr<NormalizedSingleQuery>> singleQueries;
+    std::vector<NormalizedSingleQuery> singleQueries;
     std::vector<bool> isUnionAll;
 };
 

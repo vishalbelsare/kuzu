@@ -1,32 +1,38 @@
 #pragma once
 
-#include "base_evaluator.h"
+#include "expression_evaluator.h"
 
 namespace kuzu {
+namespace main {
+class ClientContext;
+}
+
 namespace evaluator {
 
-class ReferenceExpressionEvaluator : public BaseExpressionEvaluator {
+class ReferenceExpressionEvaluator : public ExpressionEvaluator {
+    static constexpr EvaluatorType type_ = EvaluatorType::REFERENCE;
+
 public:
-    explicit ReferenceExpressionEvaluator(const processor::DataPos& vectorPos, bool isResultFlat)
-        : BaseExpressionEvaluator{isResultFlat}, vectorPos{vectorPos} {}
+    ReferenceExpressionEvaluator(std::shared_ptr<binder::Expression> expression, bool isResultFlat,
+        const processor::DataPos& dataPos)
+        : ExpressionEvaluator{type_, std::move(expression), isResultFlat}, dataPos{dataPos} {}
 
-    inline void evaluate() override {}
+    void evaluate() override {}
 
-    bool select(common::SelectionVector& selVector) override;
+    bool selectInternal(common::SelectionVector& selVector) override;
 
-    inline std::unique_ptr<BaseExpressionEvaluator> clone() override {
-        return std::make_unique<ReferenceExpressionEvaluator>(vectorPos, isResultFlat_);
+    std::unique_ptr<ExpressionEvaluator> clone() override {
+        return std::make_unique<ReferenceExpressionEvaluator>(expression, isResultFlat_, dataPos);
     }
 
 protected:
-    inline void resolveResultVector(
-        const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) override {
-        resultVector =
-            resultSet.dataChunks[vectorPos.dataChunkPos]->valueVectors[vectorPos.valueVectorPos];
+    void resolveResultVector(const processor::ResultSet& resultSet,
+        storage::MemoryManager*) override {
+        resultVector = resultSet.getValueVector(dataPos);
     }
 
 private:
-    processor::DataPos vectorPos;
+    processor::DataPos dataPos;
 };
 
 } // namespace evaluator

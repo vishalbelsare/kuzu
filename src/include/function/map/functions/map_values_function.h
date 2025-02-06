@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/vector/value_vector.h"
+#include "function/map/functions/base_map_extract_function.h"
 
 namespace kuzu {
 namespace function {
@@ -10,8 +11,8 @@ struct MapValues : public BaseMapExtract {
         common::ValueVector& listVector, common::ValueVector& resultVector) {
         auto mapValueVector = common::MapVector::getValueVector(&listVector);
         auto mapValueValues = common::MapVector::getMapValues(&listVector, listEntry);
-        BaseMapExtract::operation(
-            resultEntry, resultVector, mapValueValues, mapValueVector, listEntry.size);
+        BaseMapExtract::operation(resultEntry, resultVector, mapValueValues, mapValueVector,
+            listEntry.size);
     }
 };
 

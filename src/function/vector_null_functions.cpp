@@ -1,5 +1,6 @@
 #include "function/null/vector_null_functions.h"
 
+#include "common/exception/runtime.h"
 #include "function/null/null_functions.h"
 
 using namespace kuzu::common;
@@ -8,37 +9,39 @@ namespace kuzu {
 namespace function {
 
 void VectorNullFunction::bindExecFunction(ExpressionType expressionType,
-    const binder::expression_vector& children, scalar_exec_func& func) {
-    assert(children.size() == 1);
+    const binder::expression_vector& /*children*/, scalar_func_exec_t& func) {
     switch (expressionType) {
-    case IS_NULL: {
+    case ExpressionType::IS_NULL: {
         func = UnaryNullExecFunction<IsNull>;
         return;
     }
-    case IS_NOT_NULL: {
+    case ExpressionType::IS_NOT_NULL: {
         func = UnaryNullExecFunction<IsNotNull>;
         return;
     }
     default:
-        throw RuntimeException("Invalid expression type " + expressionTypeToString(expressionType) +
+        throw RuntimeException("Invalid expression type " +
+                               ExpressionTypeUtil::toString(expressionType) +
                                "for VectorNullOperations::bindUnaryExecFunction.");
     }
 }
 
 void VectorNullFunction::bindSelectFunction(ExpressionType expressionType,
-    const binder::expression_vector& children, scalar_select_func& func) {
-    assert(children.size() == 1);
+    const binder::expression_vector& children, scalar_func_select_t& func) {
+    KU_ASSERT(children.size() == 1);
+    (void)children;
     switch (expressionType) {
-    case IS_NULL: {
+    case ExpressionType::IS_NULL: {
         func = UnaryNullSelectFunction<IsNull>;
         return;
     }
-    case IS_NOT_NULL: {
+    case ExpressionType::IS_NOT_NULL: {
         func = UnaryNullSelectFunction<IsNotNull>;
         return;
     }
     default:
-        throw RuntimeException("Invalid expression type " + expressionTypeToString(expressionType) +
+        throw RuntimeException("Invalid expression type " +
+                               ExpressionTypeUtil::toString(expressionType) +
                                "for VectorNullOperations::bindUnarySelectFunction.");
     }
 }

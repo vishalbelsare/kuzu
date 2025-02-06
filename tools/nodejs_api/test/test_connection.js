@@ -39,7 +39,7 @@ describe("Prepare", function () {
     assert.isFalse(preparedStatement.isSuccess());
     assert.equal(
       preparedStatement.getErrorMessage(),
-      "Binder exception: Node table dog does not exist."
+      "Binder exception: Table dog does not exist."
     );
   });
 
@@ -89,10 +89,7 @@ describe("Execute", function () {
       await conn.execute(preparedStatement, { 1: 0 });
       assert.fail("No error thrown when the prepared statement is invalid.");
     } catch (e) {
-      assert.equal(
-        e.message,
-        "Binder exception: Node table dog does not exist."
-      );
+      assert.equal(e.message, "Binder exception: Table dog does not exist.");
     }
   });
 
@@ -123,49 +120,6 @@ describe("Execute", function () {
       assert.equal(e.message, "params must be a plain object.");
     }
   });
-
-  it("should throw error if a parameter is not valid", async function () {
-    try {
-      const preparedStatement = await conn.prepare(
-        "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
-      );
-      assert.exists(preparedStatement);
-      assert.isTrue(preparedStatement.isSuccess());
-      await conn.execute(preparedStatement, { 1: [] });
-      assert.fail("No error thrown when a parameter is not valid.");
-    } catch (e) {
-      assert.equal(
-        e.message,
-        "The value of each parameter must be a boolean, number, string, or Date object."
-      );
-    }
-  });
-
-  it("should throw error if a parameter is undefined or null", async function () {
-    const preparedStatement = await conn.prepare(
-      "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
-    );
-    assert.exists(preparedStatement);
-    assert.isTrue(preparedStatement.isSuccess());
-    try {
-      await conn.execute(preparedStatement, { 1: undefined });
-      assert.fail("No error thrown when a parameter is undefined.");
-    } catch (e) {
-      assert.equal(
-        e.message,
-        "The value of each parameter must not be null or undefined."
-      );
-    }
-    try {
-      await conn.execute(preparedStatement, { 1: null });
-      assert.fail("No error thrown when a parameter is null.");
-    } catch (e) {
-      assert.equal(
-        e.message,
-        "The value of each parameter must not be null or undefined."
-      );
-    }
-  });
 });
 
 describe("Query", function () {
@@ -185,10 +139,7 @@ describe("Query", function () {
       await conn.query("MATCH (a:dog) RETURN COUNT(*)");
       assert.fail("No error thrown when the query is invalid.");
     } catch (e) {
-      assert.equal(
-        e.message,
-        "Binder exception: Node table dog does not exist."
-      );
+      assert.equal(e.message, "Binder exception: Table dog does not exist.");
     }
   });
 
@@ -200,133 +151,239 @@ describe("Query", function () {
       assert.equal(e.message, "statement must be a string.");
     }
   });
-});
 
-describe("Get node table names", function () {
-  it("should return node table names", async function () {
-    const nodeTableNames = await conn.getNodeTableNames();
-    assert.exists(nodeTableNames);
-    assert.isArray(nodeTableNames);
-    nodeTableNames.sort();
-    assert.equal(nodeTableNames.length, 4);
-    assert.deepEqual(nodeTableNames, [
-      "movies",
-      "moviesSerial",
-      "organisation",
-      "person",
+  it("should be able to run multiple queries", async function () {
+    const queryResults = await conn.query(`
+      RETURN 1;
+      RETURN 2;
+      RETURN 3;
+    `);
+    assert.exists(queryResults);
+    assert.equal(queryResults.length, 3);
+    const results = await Promise.all([
+      queryResults[0].getAll(),
+      queryResults[1].getAll(),
+      queryResults[2].getAll(),
     ]);
-  });
-});
-
-describe("Get rel table names", function () {
-  it("should return rel table names", async function () {
-    const relTableNames = await conn.getRelTableNames();
-    relTableNames.sort();
-    assert.exists(relTableNames);
-    assert.isArray(relTableNames);
-    assert.equal(relTableNames.length, 5);
-    assert.deepEqual(relTableNames, [
-      "knows",
-      "marries",
-      "meets",
-      "studyAt",
-      "workAt",
-    ]);
-  });
-});
-
-describe("Get node property names", function () {
-  it("should return node property names for a valid node table", async function () {
-    const EXPECTED_NODE_PROPERTY_NAMES = [
-      { name: "ID", type: "INT64", isPrimaryKey: true },
-      { name: "age", type: "INT64", isPrimaryKey: false },
-      { name: "birthdate", type: "DATE", isPrimaryKey: false },
-      {
-        name: "courseScoresPerTerm",
-        type: "INT64[][]",
-        isPrimaryKey: false,
-      },
-      { name: "eyeSight", type: "DOUBLE", isPrimaryKey: false },
-      { name: "fName", type: "STRING", isPrimaryKey: false },
-      { name: "gender", type: "INT64", isPrimaryKey: false },
-      { name: "grades", type: "INT64[4]", isPrimaryKey: false },
-      { name: "height", type: "FLOAT", isPrimaryKey: false },
-      { name: "isStudent", type: "BOOL", isPrimaryKey: false },
-      { name: "isWorker", type: "BOOL", isPrimaryKey: false },
-      { name: "lastJobDuration", type: "INTERVAL", isPrimaryKey: false },
-      { name: "registerTime", type: "TIMESTAMP", isPrimaryKey: false },
-      { name: "usedNames", type: "STRING[]", isPrimaryKey: false },
-      { name: "workedHours", type: "INT64[]", isPrimaryKey: false },
-    ];
-    const nodePropertyNames = await conn.getNodePropertyNames("person");
-    assert.exists(nodePropertyNames);
-    assert.isArray(nodePropertyNames);
-    nodePropertyNames.sort((a, b) => (a.name > b.name ? 1 : -1));
-    assert.equal(nodePropertyNames.length, 15);
-
-    for (let i = 0; i < nodePropertyNames.length; i++) {
-      assert.equal(
-        nodePropertyNames[i].name,
-        EXPECTED_NODE_PROPERTY_NAMES[i].name
-      );
-      assert.equal(
-        nodePropertyNames[i].type,
-        EXPECTED_NODE_PROPERTY_NAMES[i].type
-      );
-      assert.equal(
-        nodePropertyNames[i].isPrimaryKey,
-        EXPECTED_NODE_PROPERTY_NAMES[i].isPrimaryKey
-      );
-    }
+    assert.deepEqual(results, [[{ 1: 1 }], [{ 2: 2 }], [{ 3: 3 }]]);
   });
 
-  it("should throw error if the node table does not exist", async function () {
+  it("should throw error if one of the multiple queries is invalid", async function () {
     try {
-      await conn.getNodePropertyNames("dog");
-      assert.fail("No error thrown when the node table does not exist.");
+      await conn.query(`
+        RETURN 1;
+        RETURN 2;
+        MATCH (a:dog) RETURN COUNT(*);
+      `);
+      assert.fail(
+        "No error thrown when one of the multiple queries is invalid."
+      );
     } catch (e) {
-      assert.equal(e.message, "Runtime exception: Cannot find node table dog");
+      assert.equal(e.message, "Binder exception: Table dog does not exist.");
     }
   });
 });
 
-describe("Get rel property names", function () {
-  it("should return rel property names for a valid rel table", async function () {
-    const EXPECTED_REL_PROPERTY_NAMES = {
-      props: [
-        { name: "comments", type: "STRING[]" },
-        { name: "date", type: "DATE" },
-        { name: "meetTime", type: "TIMESTAMP" },
-        { name: "validInterval", type: "INTERVAL" },
-      ],
-      src: "person",
-      name: "knows",
-      dst: "person",
-    };
+describe("Timeout", function () {
+  it("should abort a query if the timeout is reached", async function () {
+    try {
+      const newConn = new kuzu.Connection(db);
+      await newConn.init();
+      newConn.setQueryTimeout(1);
+      await newConn.query(
+        "UNWIND RANGE(1,100000) AS x UNWIND RANGE(1, 100000) AS y RETURN COUNT(x + y);"
+      );
+      assert.fail("No error thrown when the query times out.");
+    } catch (err) {
+      assert.equal(err.message, "Interrupted.");
+    }
+  });
 
-    const relPropertyNames = await conn.getRelPropertyNames("knows");
-    assert.exists(relPropertyNames);
-    assert.exists(relPropertyNames.props);
-    relPropertyNames.props.sort((a, b) => (a.name > b.name ? 1 : -1));
-    assert.equal(relPropertyNames.props.length, 4);
-    relPropertyNames.props.forEach((prop, i) => {
-      assert.equal(prop.name, EXPECTED_REL_PROPERTY_NAMES.props[i].name);
-      assert.equal(prop.type, EXPECTED_REL_PROPERTY_NAMES.props[i].type);
+  it("should allow setting a timeout before the connection is initialized", async function () {
+    try {
+      const newConn = new kuzu.Connection(db);
+      newConn.setQueryTimeout(1);
+      await newConn.init();
+      await newConn.query(
+        "UNWIND RANGE(1,100000) AS x UNWIND RANGE(1, 100000) AS y RETURN COUNT(x + y);"
+      );
+      assert.fail("No error thrown when the query times out.");
+    } catch (err) {
+      assert.equal(err.message, "Interrupted.");
+    }
+  });
+});
+
+describe("Close", function () {
+  it("should close the connection", async function () {
+    const newConn = new kuzu.Connection(db);
+    await newConn.init();
+    await newConn.close();
+    assert.isTrue(newConn._isClosed);
+    assert.notExists(newConn._connection);
+    try {
+      await newConn.query("MATCH (a:person) RETURN COUNT(*)");
+      assert.fail("No error thrown when the connection is closed.");
+    } catch (e) {
+      assert.equal(e.message, "Connection is closed.");
+    }
+  });
+});
+
+describe("Progress", function () {
+    it("should execute a valid prepared statement with progress", async function () {
+        let progressCalled = false;
+        const progressCallback = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        const preparedStatement = await conn.prepare(
+            "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
+        );
+        assert.exists(preparedStatement);
+        assert.isTrue(preparedStatement.isSuccess());
+        const queryResult = await conn.execute(preparedStatement, { 1: 0 }, progressCallback);
+        assert.exists(queryResult);
+        assert.equal(queryResult.constructor.name, "QueryResult");
+        assert.isTrue(queryResult.hasNext());
+        const tuple = await queryResult.getNext();
+        assert.exists(tuple);
+        assert.exists(tuple["COUNT_STAR()"]);
+        assert.equal(tuple["COUNT_STAR()"], 1);
+        assert.isTrue(progressCalled)
     });
-    assert.equal(relPropertyNames.src, EXPECTED_REL_PROPERTY_NAMES.src);
-    assert.equal(relPropertyNames.name, EXPECTED_REL_PROPERTY_NAMES.name);
-    assert.equal(relPropertyNames.dst, EXPECTED_REL_PROPERTY_NAMES.dst);
-  });
 
-  it("should throw error if the rel table does not exist", async function () {
-    try {
-      await conn.getRelPropertyNames("friend");
-      assert.fail("No error thrown when the rel table does not exist.");
-    } catch (e) {
-      assert.equal(
-        e.message,
-        "Runtime exception: Cannot find rel table friend"
-      );
-    }
-  });
+    it("should execute multiple valid prepared statements with progress", async function () {
+        let progressCalled = false;
+        const progressCallback = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        const preparedStatement = await conn.prepare(
+            "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
+        );
+        assert.exists(preparedStatement);
+        assert.isTrue(preparedStatement.isSuccess());
+        let progressCalled2 = false;
+        const progressCallback2 = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled2 = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        const preparedStatement2 = await conn.prepare(
+            "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
+        );
+        assert.exists(preparedStatement2);
+        assert.isTrue(preparedStatement2.isSuccess());
+        const promise = conn.execute(preparedStatement, { 1: 0 }, progressCallback);
+        const promise2 = conn.execute(preparedStatement2, { 1: 0 }, progressCallback2);
+        const queryResult = await promise;
+        const queryResult2 = await promise2;
+        assert.exists(queryResult);
+        assert.equal(queryResult.constructor.name, "QueryResult");
+        assert.isTrue(queryResult.hasNext());
+        const tuple = await queryResult.getNext();
+        assert.exists(tuple);
+        assert.exists(tuple["COUNT_STAR()"]);
+        assert.equal(tuple["COUNT_STAR()"], 1);
+        assert.isTrue(progressCalled)
+        assert.exists(queryResult2);
+        assert.equal(queryResult2.constructor.name, "QueryResult");
+        assert.isTrue(queryResult2.hasNext());
+        const tuple2 = await queryResult2.getNext();
+        assert.exists(tuple2);
+        assert.exists(tuple2["COUNT_STAR()"]);
+        assert.equal(tuple2["COUNT_STAR()"], 1);
+        assert.isTrue(progressCalled2)
+    });
+
+    it("should throw error if the progress callback is not a function for execute", async function () {
+        try {
+            const preparedStatement = await conn.prepare(
+                "MATCH (a:person) WHERE a.ID = $1 RETURN COUNT(*)"
+            );
+            assert.exists(preparedStatement);
+            assert.isTrue(preparedStatement.isSuccess());
+            await conn.execute(preparedStatement, { 1: 0 }, 10);
+            assert.fail("No error thrown when progress callback is not a function.");
+        } catch (e) {
+            assert.equal(
+                e.message,
+                "progressCallback must be a function."
+            );
+        }
+    });
+
+    it("should execute a valid query with progress", async function () {
+        let progressCalled = false;
+        const progressCallback = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        const queryResult = await conn.query("MATCH (a:person) RETURN COUNT(*)", progressCallback);
+        assert.exists(queryResult);
+        assert.equal(queryResult.constructor.name, "QueryResult");
+        assert.isTrue(queryResult.hasNext());
+        const tuple = await queryResult.getNext();
+        assert.exists(tuple);
+        assert.exists(tuple["COUNT_STAR()"]);
+        assert.equal(tuple["COUNT_STAR()"], 8);
+        assert.isTrue(progressCalled);
+    });
+
+    it("should execute multiple valid queries with progress", async function () {
+        let progressCalled = false;
+        const progressCallback = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        let progressCalled2 = false;
+        const progressCallback2 = (pipelineProgress, numPipelinesFinished, numPipelines) => {
+            progressCalled2 = true;
+            assert.isNumber(pipelineProgress);
+            assert.isNumber(numPipelinesFinished);
+            assert.isNumber(numPipelines);
+        };
+        const promise = conn.query("MATCH (a:person)-[:knows]->(b:person) WHERE a <> b RETURN COUNT(*)", progressCallback);
+        const promise2 = conn.query("MATCH (a:person)-[:knows]->(b:person) WHERE a <> b RETURN COUNT(*)", progressCallback2);
+        const queryResult = await promise;
+        const queryResult2 = await promise2;
+        assert.exists(queryResult);
+        assert.equal(queryResult.constructor.name, "QueryResult");
+        assert.isTrue(queryResult.hasNext());
+        const tuple = await queryResult.getNext();
+        assert.exists(tuple);
+        assert.exists(tuple["COUNT_STAR()"]);
+        assert.equal(tuple["COUNT_STAR()"], 14);
+        assert.isTrue(progressCalled);
+        assert.exists(queryResult2);
+        assert.equal(queryResult2.constructor.name, "QueryResult");
+        assert.isTrue(queryResult2.hasNext());
+        const tuple2 = await queryResult2.getNext();
+        assert.exists(tuple2);
+        assert.exists(tuple2["COUNT_STAR()"]);
+        assert.equal(tuple2["COUNT_STAR()"], 14);
+        assert.isTrue(progressCalled2);
+    });
+
+    it("should throw error if the progress callback is not a function for query", async function () {
+        try {
+            await conn.query("MATCH (a:person) RETURN COUNT(*)", 10);
+            assert.fail("No error thrown when progress callback is not a function.");
+        } catch (e) {
+            assert.equal(
+                e.message,
+                "progressCallback must be a function."
+            );
+        }
+    });
 });

@@ -1,12 +1,20 @@
-#include "planner/logical_plan/logical_operator/logical_aggregate.h"
+#include "planner/operator/logical_aggregate.h"
 
-#include "binder/expression/function_expression.h"
-#include "planner/logical_plan/logical_operator/flatten_resolver.h"
+#include "binder/expression/aggregate_function_expression.h"
+#include "binder/expression/expression_util.h"
+#include "planner/operator/factorization/flatten_resolver.h"
 
 namespace kuzu {
 namespace planner {
 
-using namespace factorization;
+std::string LogicalAggregatePrintInfo::toString() const {
+    std::string result = "";
+    result += "Group By: ";
+    result += binder::ExpressionUtil::toString(keys);
+    result += ", Aggregates: ";
+    result += binder::ExpressionUtil::toString(aggregates);
+    return result;
+}
 
 void LogicalAggregate::computeFactorizedSchema() {
     createEmptySchema();
@@ -21,43 +29,30 @@ void LogicalAggregate::computeFlatSchema() {
 }
 
 f_group_pos_set LogicalAggregate::getGroupsPosToFlattenForGroupBy() {
-    f_group_pos_set dependentGroupsPos;
-    for (auto& expression : getAllKeyExpressions()) {
-        for (auto groupPos : children[0]->getSchema()->getDependentGroupsPos(expression)) {
-            dependentGroupsPos.insert(groupPos);
-        }
-    }
     if (hasDistinctAggregate()) {
-        return FlattenAll::getGroupsPosToFlatten(dependentGroupsPos, children[0]->getSchema());
+        return FlattenAll::getGroupsPosToFlatten(getAllKeys(), *children[0]->getSchema());
     } else {
-        return FlattenAllButOne::getGroupsPosToFlatten(
-            dependentGroupsPos, children[0]->getSchema());
+        return FlattenAllButOne::getGroupsPosToFlatten(getAllKeys(), *children[0]->getSchema());
     }
 }
 
 f_group_pos_set LogicalAggregate::getGroupsPosToFlattenForAggregate() {
     if (hasDistinctAggregate()) {
-        f_group_pos_set dependentGroupsPos;
-        for (auto& expression : aggregateExpressions) {
-            for (auto groupPos : children[0]->getSchema()->getDependentGroupsPos(expression)) {
-                dependentGroupsPos.insert(groupPos);
-            }
-        }
-        return FlattenAll::getGroupsPosToFlatten(dependentGroupsPos, children[0]->getSchema());
+        return FlattenAll::getGroupsPosToFlatten(aggregates, *children[0]->getSchema());
     }
     return f_group_pos_set{};
 }
 
 std::string LogicalAggregate::getExpressionsForPrinting() const {
     std::string result = "Group By [";
-    for (auto& expression : keyExpressions) {
+    for (auto& expression : keys) {
         result += expression->toString() + ", ";
     }
-    for (auto& expression : dependentKeyExpressions) {
+    for (auto& expression : dependentKeys) {
         result += expression->toString() + ", ";
     }
     result += "], Aggregate [";
-    for (auto& expression : aggregateExpressions) {
+    for (auto& expression : aggregates) {
         result += expression->toString() + ", ";
     }
     result += "]";
@@ -65,9 +60,9 @@ std::string LogicalAggregate::getExpressionsForPrinting() const {
 }
 
 bool LogicalAggregate::hasDistinctAggregate() {
-    for (auto& expression : aggregateExpressions) {
-        auto& functionExpression = (binder::AggregateFunctionExpression&)*expression;
-        if (functionExpression.isDistinct()) {
+    for (auto& expression : aggregates) {
+        auto funcExpr = expression->constPtrCast<binder::AggregateFunctionExpression>();
+        if (funcExpr->isDistinct()) {
             return true;
         }
     }
@@ -75,13 +70,13 @@ bool LogicalAggregate::hasDistinctAggregate() {
 }
 
 void LogicalAggregate::insertAllExpressionsToGroupAndScope(f_group_pos groupPos) {
-    for (auto& expression : keyExpressions) {
+    for (auto& expression : keys) {
         schema->insertToGroupAndScopeMayRepeat(expression, groupPos);
     }
-    for (auto& expression : dependentKeyExpressions) {
+    for (auto& expression : dependentKeys) {
         schema->insertToGroupAndScopeMayRepeat(expression, groupPos);
     }
-    for (auto& expression : aggregateExpressions) {
+    for (auto& expression : aggregates) {
         schema->insertToGroupAndScopeMayRepeat(expression, groupPos);
     }
 }

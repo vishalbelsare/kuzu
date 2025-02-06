@@ -1,36 +1,34 @@
 #pragma once
 
-#include "base_evaluator.h"
-#include "function/vector_functions.h"
+#include "expression_evaluator.h"
+#include "function/scalar_function.h"
 
 namespace kuzu {
 namespace evaluator {
 
-class FunctionExpressionEvaluator : public BaseExpressionEvaluator {
+class FunctionExpressionEvaluator : public ExpressionEvaluator {
+    static constexpr EvaluatorType type_ = EvaluatorType::FUNCTION;
+
 public:
     FunctionExpressionEvaluator(std::shared_ptr<binder::Expression> expression,
-        std::vector<std::unique_ptr<BaseExpressionEvaluator>> children)
-        : BaseExpressionEvaluator{std::move(children)},
-          expression{std::move(expression)}, execFunc{nullptr}, selectFunc{nullptr} {}
-
-    void init(
-        const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) override;
+        std::vector<std::unique_ptr<ExpressionEvaluator>> children);
 
     void evaluate() override;
 
-    bool select(common::SelectionVector& selVector) override;
+    bool selectInternal(common::SelectionVector& selVector) override;
 
-    std::unique_ptr<BaseExpressionEvaluator> clone() override;
+    std::unique_ptr<ExpressionEvaluator> clone() override {
+        return std::make_unique<FunctionExpressionEvaluator>(expression, cloneVector(children));
+    }
 
 protected:
-    void resolveResultVector(
-        const processor::ResultSet& resultSet, storage::MemoryManager* memoryManager) override;
+    void resolveResultVector(const processor::ResultSet& resultSet,
+        storage::MemoryManager* memoryManager) override;
 
 private:
-    std::shared_ptr<binder::Expression> expression;
-    function::scalar_exec_func execFunc;
-    function::scalar_select_func selectFunc;
     std::vector<std::shared_ptr<common::ValueVector>> parameters;
+    std::unique_ptr<function::ScalarFunction> function;
+    std::unique_ptr<function::FunctionBindData> bindData;
 };
 
 } // namespace evaluator

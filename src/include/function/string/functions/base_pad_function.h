@@ -1,8 +1,5 @@
 #pragma once
 
-#include <cassert>
-#include <cstring>
-
 #include "common/types/ku_string.h"
 #include "common/vector/value_vector.h"
 #include "utf8proc.h"
@@ -24,16 +21,16 @@ public:
         }
         std::string paddedResult;
         padOperation(src, count, characterToPad, paddedResult);
-        common::StringVector::addString(
-            &resultValueVector, result, paddedResult.data(), paddedResult.size());
+        common::StringVector::addString(&resultValueVector, result, paddedResult.data(),
+            paddedResult.size());
     }
 
-    static std::pair<uint32_t, uint32_t> padCountChars(
-        const uint32_t count, const char* data, const uint32_t size) {
+    static std::pair<uint32_t, uint32_t> padCountChars(const uint32_t count, const char* data,
+        const uint32_t size) {
         auto str = reinterpret_cast<const utf8proc::utf8proc_uint8_t*>(data);
         uint32_t byteCount = 0, charCount = 0;
         for (; charCount < count && byteCount < size; charCount++) {
-            utf8proc::utf8proc_int32_t codepoint;
+            utf8proc::utf8proc_int32_t codepoint = 0;
             auto bytes = utf8proc::utf8proc_iterate(str + byteCount, size - byteCount, &codepoint);
             byteCount += bytes;
         }
@@ -44,14 +41,14 @@ public:
         auto padData = pad.getData();
         auto padSize = pad.len;
         uint32_t padByteCount = 0;
-        for (auto i = 0; i < charCount; i++) {
+        for (auto i = 0u; i < charCount; i++) {
             if (padByteCount >= padSize) {
                 result.insert(result.end(), (char*)padData, (char*)(padData + padByteCount));
                 padByteCount = 0;
             }
-            utf8proc::utf8proc_int32_t codepoint;
-            auto bytes = utf8proc::utf8proc_iterate(
-                padData + padByteCount, padSize - padByteCount, &codepoint);
+            utf8proc::utf8proc_int32_t codepoint = 0;
+            auto bytes = utf8proc::utf8proc_iterate(padData + padByteCount, padSize - padByteCount,
+                &codepoint);
             padByteCount += bytes;
         }
         result.insert(result.end(), (char*)padData, (char*)(padData + padByteCount));

@@ -1,40 +1,56 @@
 #pragma once
 
 #include "common/vector/value_vector.h"
-#include "function/vector_functions.h"
+#include "function/function.h"
 
 namespace kuzu {
 namespace function {
 
-struct StructPackVectorFunctions {
-    static vector_function_definitions getDefinitions();
+struct StructPackFunctions {
+    static constexpr const char* name = "STRUCT_PACK";
 
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+    static function_set getFunctionSet();
+
     static void execFunc(const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
-        common::ValueVector& result);
+        common::ValueVector& result, void* /*dataPtr*/ = nullptr);
+    static void undirectedRelPackExecFunc(
+        const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
+        common::ValueVector& result, void* /*dataPtr*/ = nullptr);
     static void compileFunc(FunctionBindData* bindData,
         const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
         std::shared_ptr<common::ValueVector>& result);
-    static void copyParameterValueToStructFieldVector(const common::ValueVector* parameter,
-        common::ValueVector* structField, common::DataChunkState* structVectorState);
+    static void undirectedRelCompileFunc(FunctionBindData* bindData,
+        const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
+        std::shared_ptr<common::ValueVector>& result);
 };
 
 struct StructExtractBindData : public FunctionBindData {
-    common::vector_idx_t childIdx;
+    common::idx_t childIdx;
 
-    StructExtractBindData(common::LogicalType dataType, common::vector_idx_t childIdx)
+    StructExtractBindData(common::LogicalType dataType, common::idx_t childIdx)
         : FunctionBindData{std::move(dataType)}, childIdx{childIdx} {}
+
+    std::unique_ptr<FunctionBindData> copy() const override {
+        return std::make_unique<StructExtractBindData>(resultType.copy(), childIdx);
+    }
 };
 
-struct StructExtractVectorFunctions {
-    static vector_function_definitions getDefinitions();
+struct StructExtractFunctions {
+    static constexpr const char* name = "STRUCT_EXTRACT";
 
-    static std::unique_ptr<FunctionBindData> bindFunc(
-        const binder::expression_vector& arguments, FunctionDefinition* definition);
+    static function_set getFunctionSet();
+
+    static std::unique_ptr<FunctionBindData> bindFunc(const ScalarBindFuncInput& input);
+
     static void compileFunc(FunctionBindData* bindData,
         const std::vector<std::shared_ptr<common::ValueVector>>& parameters,
         std::shared_ptr<common::ValueVector>& result);
+};
+
+struct KeysFunctions {
+    static constexpr const char* name = "KEYS";
+
+    static function_set getFunctionSet();
 };
 
 } // namespace function

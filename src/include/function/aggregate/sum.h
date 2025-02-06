@@ -1,54 +1,44 @@
 #pragma once
 
-#include "aggregate_function.h"
-#include "function/arithmetic/arithmetic_functions.h"
+#include "function/aggregate_function.h"
+#include "function/arithmetic/add.h"
 
 namespace kuzu {
 namespace function {
 
-template<typename T>
-struct SumFunction {
-
-    struct SumState : public AggregateState {
-        inline uint32_t getStateSize() const override { return sizeof(*this); }
-        inline void moveResultToVector(common::ValueVector* outputVector, uint64_t pos) override {
-            memcpy(outputVector->getData() + pos * outputVector->getNumBytesPerValue(),
-                reinterpret_cast<uint8_t*>(&sum), outputVector->getNumBytesPerValue());
-        }
-
-        T sum;
-    };
-
-    static std::unique_ptr<AggregateState> initialize() { return std::make_unique<SumState>(); }
-
-    static void updateAll(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
-        storage::MemoryManager* memoryManager) {
-        assert(!input->state->isFlat());
-        auto state = reinterpret_cast<SumState*>(state_);
-        if (input->hasNoNullsGuarantee()) {
-            for (auto i = 0u; i < input->state->selVector->selectedSize; ++i) {
-                auto pos = input->state->selVector->selectedPositions[i];
-                updateSingleValue(state, input, pos, multiplicity);
-            }
-        } else {
-            for (auto i = 0u; i < input->state->selVector->selectedSize; ++i) {
-                auto pos = input->state->selVector->selectedPositions[i];
-                if (!input->isNull(pos)) {
-                    updateSingleValue(state, input, pos, multiplicity);
-                }
-            }
-        }
+template<typename RESULT_TYPE>
+struct SumState : public AggregateState {
+    uint32_t getStateSize() const override { return sizeof(*this); }
+    void moveResultToVector(common::ValueVector* outputVector, uint64_t pos) override {
+        outputVector->setValue(pos, sum);
     }
 
-    static inline void updatePos(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
-        uint32_t pos, storage::MemoryManager* memoryManager) {
-        auto state = reinterpret_cast<SumState*>(state_);
+    RESULT_TYPE sum{};
+};
+
+template<typename INPUT_TYPE, typename RESULT_TYPE>
+struct SumFunction {
+    static std::unique_ptr<AggregateState> initialize() {
+        return std::make_unique<SumState<RESULT_TYPE>>();
+    }
+
+    static void updateAll(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
+        storage::MemoryManager* /*memoryManager*/) {
+        KU_ASSERT(!input->state->isFlat());
+        auto* state = reinterpret_cast<SumState<RESULT_TYPE>*>(state_);
+        input->forEachNonNull(
+            [&](auto pos) { updateSingleValue(state, input, pos, multiplicity); });
+    }
+
+    static void updatePos(uint8_t* state_, common::ValueVector* input, uint64_t multiplicity,
+        uint32_t pos, storage::MemoryManager* /*memoryManager*/) {
+        auto* state = reinterpret_cast<SumState<RESULT_TYPE>*>(state_);
         updateSingleValue(state, input, pos, multiplicity);
     }
 
-    static void updateSingleValue(
-        SumState* state, common::ValueVector* input, uint32_t pos, uint64_t multiplicity) {
-        T val = input->getValue<T>(pos);
+    static void updateSingleValue(SumState<RESULT_TYPE>* state, common::ValueVector* input,
+        uint32_t pos, uint64_t multiplicity) {
+        INPUT_TYPE val = input->getValue<INPUT_TYPE>(pos);
         for (auto j = 0u; j < multiplicity; ++j) {
             if (state->isNull) {
                 state->sum = val;
@@ -59,13 +49,13 @@ struct SumFunction {
         }
     }
 
-    static void combine(
-        uint8_t* state_, uint8_t* otherState_, storage::MemoryManager* memoryManager) {
-        auto otherState = reinterpret_cast<SumState*>(otherState_);
+    static void combine(uint8_t* state_, uint8_t* otherState_,
+        storage::MemoryManager* /*memoryManager*/) {
+        auto* otherState = reinterpret_cast<SumState<RESULT_TYPE>*>(otherState_);
         if (otherState->isNull) {
             return;
         }
-        auto state = reinterpret_cast<SumState*>(state_);
+        auto* state = reinterpret_cast<SumState<RESULT_TYPE>*>(state_);
         if (state->isNull) {
             state->sum = otherState->sum;
             state->isNull = false;
@@ -74,7 +64,7 @@ struct SumFunction {
         }
     }
 
-    static void finalize(uint8_t* state_) {}
+    static void finalize(uint8_t* /*state_*/) {}
 };
 
 } // namespace function

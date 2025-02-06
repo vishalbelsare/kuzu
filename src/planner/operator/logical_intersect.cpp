@@ -1,4 +1,4 @@
-#include "planner/logical_plan/logical_operator/logical_intersect.h"
+#include "planner/operator/logical_intersect.h"
 
 namespace kuzu {
 namespace planner {
@@ -24,7 +24,7 @@ void LogicalIntersect::computeFactorizedSchema() {
     // Write intersect node and rels into a new group regardless of whether rel is n-n.
     auto outGroupPos = schema->createGroup();
     schema->insertToGroupAndScope(intersectNodeID, outGroupPos);
-    for (auto i = 1; i < children.size(); ++i) {
+    for (auto i = 1u; i < children.size(); ++i) {
         auto buildSchema = children[i]->getSchema();
         auto keyNodeID = keyNodeIDs[i - 1];
         // Write rel properties into output group.
@@ -41,9 +41,8 @@ void LogicalIntersect::computeFactorizedSchema() {
 void LogicalIntersect::computeFlatSchema() {
     auto probeSchema = children[0]->getSchema();
     schema = probeSchema->copy();
-    schema->createGroup();
     schema->insertToGroupAndScope(intersectNodeID, 0);
-    for (auto i = 1; i < children.size(); ++i) {
+    for (auto i = 1u; i < children.size(); ++i) {
         auto buildSchema = children[i]->getSchema();
         auto keyNodeID = keyNodeIDs[i - 1];
         for (auto& expression : buildSchema->getExpressionsInScope()) {
@@ -61,8 +60,11 @@ std::unique_ptr<LogicalOperator> LogicalIntersect::copy() {
     for (auto i = 1u; i < children.size(); ++i) {
         buildChildren.push_back(children[i]->copy());
     }
-    return make_unique<LogicalIntersect>(
-        intersectNodeID, keyNodeIDs, children[0]->copy(), std::move(buildChildren));
+    auto op = make_unique<LogicalIntersect>(intersectNodeID, keyNodeIDs, children[0]->copy(),
+        std::move(buildChildren), cardinality);
+    op->sipInfo = sipInfo;
+    op->cardinality = cardinality;
+    return op;
 }
 
 } // namespace planner

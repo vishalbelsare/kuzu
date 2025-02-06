@@ -1,10 +1,23 @@
 #include "processor/operator/hash_join/hash_join_build.h"
 
+#include "binder/expression/expression_util.h"
+#include "processor/execution_context.h"
+
 using namespace kuzu::common;
 using namespace kuzu::storage;
 
 namespace kuzu {
 namespace processor {
+
+std::string HashJoinBuildPrintInfo::toString() const {
+    std::string result = "Keys: ";
+    result += binder::ExpressionUtil::toString(keys);
+    if (!payloads.empty()) {
+        result += ", Payloads: ";
+        result += binder::ExpressionUtil::toString(payloads);
+    }
+    return result;
+}
 
 void HashJoinSharedState::mergeLocalHashTable(JoinHashTable& localHashTable) {
     std::unique_lock lck(mtx);
@@ -12,17 +25,35 @@ void HashJoinSharedState::mergeLocalHashTable(JoinHashTable& localHashTable) {
 }
 
 void HashJoinBuild::initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) {
-    for (auto& pos : info->keysPos) {
-        vectorsToAppend.push_back(resultSet->getValueVector(pos).get());
+    std::vector<LogicalType> keyTypes;
+    for (auto i = 0u; i < info->keysPos.size(); ++i) {
+        auto vector = resultSet->getValueVector(info->keysPos[i]).get();
+        keyTypes.push_back(vector->dataType.copy());
+        if (info->fStateTypes[i] == common::FStateType::UNFLAT) {
+            setKeyState(vector->state.get());
+        }
+        keyVectors.push_back(vector);
+    }
+    if (keyState == nullptr) {
+        setKeyState(keyVectors[0]->state.get());
     }
     for (auto& pos : info->payloadsPos) {
-        vectorsToAppend.push_back(resultSet->getValueVector(pos).get());
+        payloadVectors.push_back(resultSet->getValueVector(pos).get());
     }
-    initLocalHashTable(*context->memoryManager);
+    hashTable = std::make_unique<JoinHashTable>(*context->clientContext->getMemoryManager(),
+        std::move(keyTypes), info->tableSchema.copy());
 }
 
-void HashJoinBuild::finalize(ExecutionContext* context) {
-    auto numTuples = sharedState->getHashTable()->getNumTuples();
+void HashJoinBuild::setKeyState(common::DataChunkState* state) {
+    if (keyState == nullptr) {
+        keyState = state;
+    } else {
+        KU_ASSERT(keyState == state); // two pointers should be pointing to the same state
+    }
+}
+
+void HashJoinBuild::finalizeInternal(ExecutionContext* /*context*/) {
+    auto numTuples = sharedState->getHashTable()->getNumEntries();
     sharedState->getHashTable()->allocateHashSlots(numTuples);
     sharedState->getHashTable()->buildHashSlots();
 }
@@ -30,9 +61,11 @@ void HashJoinBuild::finalize(ExecutionContext* context) {
 void HashJoinBuild::executeInternal(ExecutionContext* context) {
     // Append thread-local tuples
     while (children[0]->getNextTuple(context)) {
+        uint64_t numAppended = 0u;
         for (auto i = 0u; i < resultSet->multiplicity; ++i) {
-            hashTable->append(vectorsToAppend);
+            numAppended += appendVectors();
         }
+        metrics->numOutputTuple.increase(numAppended);
     }
     // Merge with global hash table once local tuples are all appended.
     sharedState->mergeLocalHashTable(*hashTable);

@@ -1,6 +1,9 @@
 #pragma once
 
-#include "processor/operator/mask.h"
+#include <mutex>
+
+#include "common/enums/extend_direction.h"
+#include "common/mask.h"
 #include "processor/operator/physical_operator.h"
 
 namespace kuzu {
@@ -8,124 +11,199 @@ namespace processor {
 
 class BaseSemiMasker;
 
-class SemiMaskerInfo {
-    friend class BaseSemiMasker;
+using mask_vector = std::vector<common::RoaringBitmapSemiMask*>;
 
+struct SemiMaskerLocalState {
+    common::table_id_map_t<std::unique_ptr<common::RoaringBitmapSemiMask>> localMasksPerTable;
+    common::RoaringBitmapSemiMask* singleTableRef = nullptr;
+
+    void maskSingleTable(common::offset_t offset) const { singleTableRef->mask(offset); }
+    void maskMultiTable(common::nodeID_t nodeID) const {
+        KU_ASSERT(localMasksPerTable.contains(nodeID.tableID));
+        localMasksPerTable.at(nodeID.tableID)->mask(nodeID.offset);
+    }
+};
+
+class SemiMaskerSharedState {
 public:
-    // Multiple maskers can point to the same SemiMask, thus we associate each masker with an idx
-    // to indicate the execution sequence of its pipeline. Also, the maskerIdx is used as a flag to
-    // indicate if a value in the mask is masked or not, as each masker will increment the selected
-    // value in the mask by 1. More details are described in NodeTableSemiMask.
-    using mask_with_idx = std::pair<NodeSemiMask*, uint8_t>;
+    explicit SemiMaskerSharedState(common::table_id_map_t<mask_vector> masksPerTable)
+        : masksPerTable{std::move(masksPerTable)} {}
 
-    SemiMaskerInfo(const DataPos& keyPos,
-        std::unordered_map<common::table_id_t, std::vector<mask_with_idx>> masksPerTable)
-        : keyPos{keyPos}, masksPerTable{std::move(masksPerTable)} {}
-    SemiMaskerInfo(const SemiMaskerInfo& other)
-        : keyPos{other.keyPos}, masksPerTable{other.masksPerTable} {}
+    SemiMaskerLocalState* appendLocalState();
 
-    inline const std::vector<mask_with_idx>& getSingleTableMasks() const {
-        assert(masksPerTable.size() == 1);
-        return masksPerTable.begin()->second;
-    }
+    void mergeToGlobal();
 
-    inline const std::vector<mask_with_idx>& getTableMasks(common::table_id_t tableID) const {
-        assert(masksPerTable.contains(tableID));
-        return masksPerTable.at(tableID);
-    }
+private:
+    common::table_id_map_t<mask_vector> masksPerTable;
+    std::vector<std::shared_ptr<SemiMaskerLocalState>> localInfos;
+    std::mutex mtx;
+};
 
-    inline std::unique_ptr<SemiMaskerInfo> copy() const {
-        return std::make_unique<SemiMaskerInfo>(*this);
+struct SemiMaskerPrintInfo final : OPPrintInfo {
+    std::vector<std::string> operatorNames;
+
+    explicit SemiMaskerPrintInfo(std::vector<std::string> operatorNames)
+        : operatorNames{std::move(operatorNames)} {}
+
+    std::string toString() const override;
+
+    std::unique_ptr<OPPrintInfo> copy() const override {
+        return std::unique_ptr<SemiMaskerPrintInfo>(new SemiMaskerPrintInfo(*this));
     }
 
 private:
-    DataPos keyPos;
-    std::unordered_map<common::table_id_t, std::vector<mask_with_idx>> masksPerTable;
+    SemiMaskerPrintInfo(const SemiMaskerPrintInfo& other)
+        : OPPrintInfo{other}, operatorNames{other.operatorNames} {}
 };
 
 class BaseSemiMasker : public PhysicalOperator {
-protected:
-    BaseSemiMasker(std::unique_ptr<SemiMaskerInfo> info, std::unique_ptr<PhysicalOperator> child,
-        uint32_t id, const std::string& paramsString)
-        : PhysicalOperator{PhysicalOperatorType::SEMI_MASKER, std::move(child), id, paramsString},
-          info{std::move(info)} {}
+    static constexpr PhysicalOperatorType type_ = PhysicalOperatorType::SEMI_MASKER;
 
-    void initGlobalStateInternal(ExecutionContext* context) override;
+protected:
+    BaseSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo)
+        : PhysicalOperator{type_, std::move(child), id, std::move(printInfo)}, keyPos{keyPos},
+          keyVector{nullptr}, sharedState{std::move(sharedState)}, localState{nullptr} {}
 
     void initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) override;
 
+    void finalizeInternal(ExecutionContext* context) final;
+
 protected:
-    std::unique_ptr<SemiMaskerInfo> info;
+    DataPos keyPos;
     common::ValueVector* keyVector;
+    std::shared_ptr<SemiMaskerSharedState> sharedState;
+    SemiMaskerLocalState* localState;
 };
 
 class SingleTableSemiMasker : public BaseSemiMasker {
 public:
-    SingleTableSemiMasker(std::unique_ptr<SemiMaskerInfo> info,
-        std::unique_ptr<PhysicalOperator> child, uint32_t id, const std::string& paramsString)
-        : BaseSemiMasker{std::move(info), std::move(child), id, paramsString} {}
+    SingleTableSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo)
+        : BaseSemiMasker{keyPos, sharedState, std::move(child), id, std::move(printInfo)} {}
 
     bool getNextTuplesInternal(ExecutionContext* context) final;
 
-    inline std::unique_ptr<PhysicalOperator> clone() final {
-        return std::make_unique<SingleTableSemiMasker>(
-            info->copy(), children[0]->clone(), id, paramsString);
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<SingleTableSemiMasker>(keyPos, sharedState, children[0]->clone(),
+            id, printInfo->copy());
     }
 };
 
 class MultiTableSemiMasker : public BaseSemiMasker {
 public:
-    MultiTableSemiMasker(std::unique_ptr<SemiMaskerInfo> info,
-        std::unique_ptr<PhysicalOperator> child, uint32_t id, const std::string& paramsString)
-        : BaseSemiMasker{std::move(info), std::move(child), id, paramsString} {}
+    MultiTableSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo)
+        : BaseSemiMasker{keyPos, sharedState, std::move(child), id, std::move(printInfo)} {}
 
     bool getNextTuplesInternal(ExecutionContext* context) final;
 
-    inline std::unique_ptr<PhysicalOperator> clone() final {
-        return std::make_unique<MultiTableSemiMasker>(
-            info->copy(), children[0]->clone(), id, paramsString);
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<MultiTableSemiMasker>(keyPos, sharedState, children[0]->clone(), id,
+            printInfo->copy());
+    }
+};
+
+class NodeIDsSemiMask : public BaseSemiMasker {
+protected:
+    NodeIDsSemiMask(DataPos keyPos, DataPos srcNodeIDPos, DataPos dstNodeIDPos,
+        std::shared_ptr<SemiMaskerSharedState> sharedState, std::unique_ptr<PhysicalOperator> child,
+        uint32_t id, std::unique_ptr<OPPrintInfo> printInfo)
+        : BaseSemiMasker{keyPos, sharedState, std::move(child), id, std::move(printInfo)},
+          srcNodeIDPos{srcNodeIDPos}, dstNodeIDPos{dstNodeIDPos} {}
+
+    void initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) final;
+
+protected:
+    DataPos srcNodeIDPos;
+    DataPos dstNodeIDPos;
+
+    common::ValueVector* srcNodeIDVector = nullptr;
+    common::ValueVector* dstNodeIDVector = nullptr;
+};
+
+class NodeIDsSingleTableSemiMasker : public NodeIDsSemiMask {
+public:
+    NodeIDsSingleTableSemiMasker(DataPos keyPos, DataPos srcNodeIDPos, DataPos dstNodeIDPos,
+        std::shared_ptr<SemiMaskerSharedState> sharedState, std::unique_ptr<PhysicalOperator> child,
+        uint32_t id, std::unique_ptr<OPPrintInfo> printInfo)
+        : NodeIDsSemiMask{keyPos, srcNodeIDPos, dstNodeIDPos, sharedState, std::move(child), id,
+              std::move(printInfo)} {}
+
+    bool getNextTuplesInternal(ExecutionContext* context) final;
+
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<NodeIDsSingleTableSemiMasker>(keyPos, srcNodeIDPos, dstNodeIDPos,
+            sharedState, children[0]->clone(), id, printInfo->copy());
+    }
+};
+
+class NodeIDsMultipleTableSemiMasker : public NodeIDsSemiMask {
+public:
+    NodeIDsMultipleTableSemiMasker(DataPos keyPos, DataPos srcNodeIDPos, DataPos dstNodeIDPos,
+        std::shared_ptr<SemiMaskerSharedState> sharedState, std::unique_ptr<PhysicalOperator> child,
+        uint32_t id, std::unique_ptr<OPPrintInfo> printInfo)
+        : NodeIDsSemiMask{keyPos, srcNodeIDPos, dstNodeIDPos, sharedState, std::move(child), id,
+              std::move(printInfo)} {}
+
+    bool getNextTuplesInternal(ExecutionContext* context) final;
+
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<NodeIDsMultipleTableSemiMasker>(keyPos, srcNodeIDPos, dstNodeIDPos,
+            sharedState, children[0]->clone(), id, printInfo->copy());
     }
 };
 
 class PathSemiMasker : public BaseSemiMasker {
 protected:
-    PathSemiMasker(std::unique_ptr<SemiMaskerInfo> info, std::unique_ptr<PhysicalOperator> child,
-        uint32_t id, const std::string& paramsString)
-        : BaseSemiMasker{std::move(info), std::move(child), id, paramsString} {}
+    PathSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo, common::ExtendDirection direction)
+        : BaseSemiMasker{keyPos, std::move(sharedState), std::move(child), id,
+              std::move(printInfo)},
+          direction{direction} {}
 
     void initLocalStateInternal(ResultSet* resultSet, ExecutionContext* context) final;
 
 protected:
-    common::ValueVector* pathRelsVector;
-    common::ValueVector* pathRelsSrcIDDataVector;
-    common::ValueVector* pathRelsDstIDDataVector;
+    common::ValueVector* pathRelsVector = nullptr;
+    common::ValueVector* pathRelsSrcIDDataVector = nullptr;
+    common::ValueVector* pathRelsDstIDDataVector = nullptr;
+    common::ExtendDirection direction;
 };
 
 class PathSingleTableSemiMasker : public PathSemiMasker {
 public:
-    PathSingleTableSemiMasker(std::unique_ptr<SemiMaskerInfo> info,
-        std::unique_ptr<PhysicalOperator> child, uint32_t id, const std::string& paramsString)
-        : PathSemiMasker{std::move(info), std::move(child), id, paramsString} {}
+    PathSingleTableSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo, common::ExtendDirection direction)
+        : PathSemiMasker{keyPos, std::move(sharedState), std::move(child), id, std::move(printInfo),
+              direction} {}
 
     bool getNextTuplesInternal(ExecutionContext* context) final;
 
-    inline std::unique_ptr<PhysicalOperator> clone() final {
-        return std::make_unique<PathSingleTableSemiMasker>(
-            info->copy(), children[0]->clone(), id, paramsString);
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<PathSingleTableSemiMasker>(keyPos, sharedState,
+            children[0]->clone(), id, printInfo->copy(), direction);
     }
 };
 
 class PathMultipleTableSemiMasker : public PathSemiMasker {
 public:
-    PathMultipleTableSemiMasker(std::unique_ptr<SemiMaskerInfo> info,
-        std::unique_ptr<PhysicalOperator> child, uint32_t id, const std::string& paramsString)
-        : PathSemiMasker{std::move(info), std::move(child), id, paramsString} {}
+    PathMultipleTableSemiMasker(DataPos keyPos, std::shared_ptr<SemiMaskerSharedState> sharedState,
+        std::unique_ptr<PhysicalOperator> child, uint32_t id,
+        std::unique_ptr<OPPrintInfo> printInfo, common::ExtendDirection direction)
+        : PathSemiMasker{keyPos, std::move(sharedState), std::move(child), id, std::move(printInfo),
+              direction} {}
 
     bool getNextTuplesInternal(ExecutionContext* context) final;
 
-    inline std::unique_ptr<PhysicalOperator> clone() final {
-        return std::make_unique<PathMultipleTableSemiMasker>(
-            info->copy(), children[0]->clone(), id, paramsString);
+    std::unique_ptr<PhysicalOperator> clone() final {
+        return std::make_unique<PathMultipleTableSemiMasker>(keyPos, sharedState,
+            children[0]->clone(), id, printInfo->copy(), direction);
     }
 };
 

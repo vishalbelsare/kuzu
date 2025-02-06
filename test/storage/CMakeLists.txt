@@ -1,5 +1,9 @@
-#add_kuzu_test(disk_array_update_test disk_array_update_test.cpp)
 add_kuzu_test(node_insertion_deletion_test node_insertion_deletion_test.cpp)
-add_kuzu_test(wal_record_test wal_record_test.cpp)
-add_kuzu_test(wal_replayer_test wal_replayer_test.cpp)
-add_kuzu_test(wal_test wal_test.cpp)
+add_kuzu_test(compression_test compression_test.cpp compress_chunk_test.cpp)
+add_kuzu_test(column_chunk_metadata_test column_chunk_metadata_test.cpp)
+add_kuzu_test(local_hash_index_test local_hash_index_test.cpp)
+add_kuzu_test(buffer_manager_test buffer_manager_test.cpp)
+add_kuzu_test(rel_scan_test rel_scan_test.cpp)
+add_kuzu_test(node_update_test node_update_test.cpp)
+
+target_include_directories(compression_test PRIVATE ${PROJECT_SOURCE_DIR}/third_party/alp/include)

@@ -1,38 +1,43 @@
 #include "binder/binder.h"
-#include "binder/expression/function_expression.h"
-#include "binder/expression/literal_expression.h"
+#include "binder/expression/aggregate_function_expression.h"
+#include "binder/expression/scalar_function_expression.h"
 #include "binder/expression_binder.h"
-#include "common/string_utils.h"
-#include "function/schema/vector_label_functions.h"
+#include "catalog/catalog.h"
+#include "catalog/catalog_entry/rel_group_catalog_entry.h"
+#include "common/exception/binder.h"
+#include "function/built_in_function_utils.h"
+#include "function/cast/vector_cast_functions.h"
+#include "function/rewrite_function.h"
+#include "function/scalar_macro_function.h"
+#include "main/client_context.h"
 #include "parser/expression/parsed_function_expression.h"
 #include "parser/parsed_expression_visitor.h"
 
 using namespace kuzu::common;
 using namespace kuzu::parser;
+using namespace kuzu::function;
+using namespace kuzu::catalog;
 
 namespace kuzu {
 namespace binder {
 
-std::shared_ptr<Expression> ExpressionBinder::bindFunctionExpression(
-    const ParsedExpression& parsedExpression) {
-    auto& parsedFunctionExpression = (ParsedFunctionExpression&)parsedExpression;
-    auto functionName = parsedFunctionExpression.getFunctionName();
-    StringUtils::toUpper(functionName);
-    auto result = rewriteFunctionExpression(parsedExpression, functionName);
-    if (result != nullptr) {
-        return result;
-    }
-    auto functionType = binder->catalog.getFunctionType(functionName);
-    switch (functionType) {
-    case common::FUNCTION:
-        return bindScalarFunctionExpression(parsedExpression, functionName);
-    case common::AGGREGATE_FUNCTION:
-        return bindAggregateFunctionExpression(
-            parsedExpression, functionName, parsedFunctionExpression.getIsDistinct());
-    case common::MACRO:
-        return bindMacroExpression(parsedExpression, functionName);
+std::shared_ptr<Expression> ExpressionBinder::bindFunctionExpression(const ParsedExpression& expr) {
+    auto funcExpr = expr.constPtrCast<ParsedFunctionExpression>();
+    auto functionName = funcExpr->getNormalizedFunctionName();
+    auto entry = context->getCatalog()->getFunctionEntry(context->getTransaction(), functionName);
+    switch (entry->getType()) {
+    case CatalogEntryType::SCALAR_FUNCTION_ENTRY:
+        return bindScalarFunctionExpression(expr, functionName);
+    case CatalogEntryType::REWRITE_FUNCTION_ENTRY:
+        return bindRewriteFunctionExpression(expr);
+    case CatalogEntryType::AGGREGATE_FUNCTION_ENTRY:
+        return bindAggregateFunctionExpression(expr, functionName, funcExpr->getIsDistinct());
+    case CatalogEntryType::SCALAR_MACRO_ENTRY:
+        return bindMacroExpression(expr, functionName);
     default:
-        throw NotImplementedException{"ExpressionBinder::bindFunctionExpression"};
+        throw BinderException(
+            stringFormat("{} is a {}. Scalar function, aggregate function or macro was expected. ",
+                functionName, CatalogEntryTypeUtils::toString(entry->getType())));
     }
 }
 
@@ -40,81 +45,145 @@ std::shared_ptr<Expression> ExpressionBinder::bindScalarFunctionExpression(
     const ParsedExpression& parsedExpression, const std::string& functionName) {
     expression_vector children;
     for (auto i = 0u; i < parsedExpression.getNumChildren(); ++i) {
-        auto child = bindExpression(*parsedExpression.getChild(i));
-        children.push_back(std::move(child));
+        auto expr = bindExpression(*parsedExpression.getChild(i));
+        if (parsedExpression.getChild(i)->hasAlias()) {
+            expr->setAlias(parsedExpression.getChild(i)->getAlias());
+        }
+        children.push_back(expr);
     }
     return bindScalarFunctionExpression(children, functionName);
 }
 
+static std::vector<LogicalType> getTypes(const expression_vector& exprs) {
+    std::vector<LogicalType> result;
+    for (auto& expr : exprs) {
+        result.push_back(expr->getDataType().copy());
+    }
+    return result;
+}
+
 std::shared_ptr<Expression> ExpressionBinder::bindScalarFunctionExpression(
     const expression_vector& children, const std::string& functionName) {
-    auto builtInFunctions = binder->catalog.getBuiltInVectorFunctions();
-    std::vector<LogicalType> childrenTypes;
-    for (auto& child : children) {
-        childrenTypes.push_back(child->dataType);
-    }
-    auto function = builtInFunctions->matchVectorFunction(functionName, childrenTypes);
-    if (builtInFunctions->canApplyStaticEvaluation(functionName, children)) {
-        return staticEvaluate(functionName, children);
+    auto catalog = context->getCatalog();
+    auto transaction = context->getTransaction();
+    auto childrenTypes = getTypes(children);
+
+    auto entry = catalog->getFunctionEntry(transaction, functionName);
+
+    auto function = BuiltInFunctionsUtils::matchFunction(functionName, childrenTypes,
+        entry->ptrCast<FunctionCatalogEntry>())
+                        ->ptrCast<ScalarFunction>()
+                        ->copy();
+    if (children.size() == 2 && children[1]->expressionType == ExpressionType::LAMBDA) {
+        if (!function->isListLambda) {
+            throw BinderException(stringFormat("{} does not support lambda input.", functionName));
+        }
+        bindLambdaExpression(*children[0], *children[1]);
     }
     expression_vector childrenAfterCast;
-    for (auto i = 0u; i < children.size(); ++i) {
-        auto targetType =
-            function->isVarLength ? function->parameterTypeIDs[0] : function->parameterTypeIDs[i];
-        childrenAfterCast.push_back(implicitCastIfNecessary(children[i], targetType));
-    }
     std::unique_ptr<function::FunctionBindData> bindData;
-    if (function->bindFunc) {
-        bindData = function->bindFunc(childrenAfterCast, function);
+    auto bindInput = ScalarBindFuncInput{children, function.get(), context};
+    if (functionName == CastAnyFunction::name) {
+        bindData = function->bindFunc(bindInput);
+        if (bindData == nullptr) { // No need to cast.
+            // TODO(Xiyang): We should return a deep copy otherwise the same expression might
+            // appear in the final projection list repeatedly.
+            // E.g. RETURN cast([NULL], "INT64[1][]"), cast([NULL], "INT64[1][][]")
+            return children[0];
+        }
+        auto childAfterCast = children[0];
+        if (children[0]->getDataType().getLogicalTypeID() == LogicalTypeID::ANY) {
+            childAfterCast = implicitCastIfNecessary(children[0], LogicalType::STRING());
+        }
+        childrenAfterCast.push_back(std::move(childAfterCast));
     } else {
-        bindData =
-            std::make_unique<function::FunctionBindData>(LogicalType(function->returnTypeID));
+        if (function->bindFunc) {
+            bindData = function->bindFunc(bindInput);
+        } else {
+            bindData = std::make_unique<FunctionBindData>(LogicalType(function->returnTypeID));
+        }
+        if (!bindData->paramTypes.empty()) {
+            for (auto i = 0u; i < children.size(); ++i) {
+                childrenAfterCast.push_back(
+                    implicitCastIfNecessary(children[i], bindData->paramTypes[i]));
+            }
+        } else {
+            for (auto i = 0u; i < children.size(); ++i) {
+                auto id = function->isVarLength ? function->parameterTypeIDs[0] :
+                                                  function->parameterTypeIDs[i];
+                auto type = LogicalType(id);
+                childrenAfterCast.push_back(implicitCastIfNecessary(children[i], type));
+            }
+        }
     }
     auto uniqueExpressionName =
         ScalarFunctionExpression::getUniqueName(function->name, childrenAfterCast);
-    return make_shared<ScalarFunctionExpression>(functionName, FUNCTION, std::move(bindData),
-        std::move(childrenAfterCast), function->execFunc, function->selectFunc,
-        function->compileFunc, uniqueExpressionName);
+    return std::make_shared<ScalarFunctionExpression>(ExpressionType::FUNCTION, std::move(function),
+        std::move(bindData), std::move(childrenAfterCast), uniqueExpressionName);
+}
+
+std::shared_ptr<Expression> ExpressionBinder::bindRewriteFunctionExpression(
+    const parser::ParsedExpression& expr) {
+    auto& funcExpr = expr.constCast<ParsedFunctionExpression>();
+    expression_vector children;
+    for (auto i = 0u; i < expr.getNumChildren(); ++i) {
+        children.push_back(bindExpression(*expr.getChild(i)));
+    }
+    auto childrenTypes = getTypes(children);
+    auto functionName = funcExpr.getNormalizedFunctionName();
+    auto entry = context->getCatalog()->getFunctionEntry(context->getTransaction(), functionName);
+    auto match = BuiltInFunctionsUtils::matchFunction(functionName, childrenTypes,
+        entry->ptrCast<FunctionCatalogEntry>());
+    auto function = match->constPtrCast<RewriteFunction>();
+    KU_ASSERT(function->rewriteFunc != nullptr);
+    auto input = RewriteFunctionBindInput(context, this, children);
+    return function->rewriteFunc(input);
 }
 
 std::shared_ptr<Expression> ExpressionBinder::bindAggregateFunctionExpression(
     const ParsedExpression& parsedExpression, const std::string& functionName, bool isDistinct) {
-    auto builtInFunctions = binder->catalog.getBuiltInAggregateFunction();
     std::vector<LogicalType> childrenTypes;
     expression_vector children;
     for (auto i = 0u; i < parsedExpression.getNumChildren(); ++i) {
         auto child = bindExpression(*parsedExpression.getChild(i));
-        auto childTypeID = child->dataType.getLogicalTypeID();
-        if (isDistinct &&
-            (childTypeID == LogicalTypeID::NODE || childTypeID == LogicalTypeID::REL)) {
-            throw BinderException{"DISTINCT is not supported for NODE or REL type."};
-        }
-        childrenTypes.push_back(child->dataType);
+        childrenTypes.push_back(child->dataType.copy());
         children.push_back(std::move(child));
     }
-    auto function = builtInFunctions->matchFunction(functionName, childrenTypes, isDistinct);
+    auto entry = context->getCatalog()->getFunctionEntry(context->getTransaction(), functionName);
+    auto function = BuiltInFunctionsUtils::matchAggregateFunction(functionName, childrenTypes,
+        isDistinct, entry->ptrCast<FunctionCatalogEntry>())
+                        ->copy();
+    if (function.paramRewriteFunc) {
+        function.paramRewriteFunc(children);
+    }
+    if (functionName == CollectFunction::name && parsedExpression.hasAlias() &&
+        children[0]->getDataType().getLogicalTypeID() == LogicalTypeID::NODE) {
+        auto& node = children[0]->constCast<NodeExpression>();
+        binder->scope.memorizeTableEntries(parsedExpression.getAlias(), node.getEntries());
+    }
     auto uniqueExpressionName =
-        AggregateFunctionExpression::getUniqueName(function->name, children, function->isDistinct);
+        AggregateFunctionExpression::getUniqueName(function.name, children, function.isDistinct);
     if (children.empty()) {
         uniqueExpressionName = binder->getUniqueExpressionName(uniqueExpressionName);
     }
-    std::unique_ptr<function::FunctionBindData> bindData;
-    if (function->bindFunc) {
-        bindData = function->bindFunc(children, function);
+    std::unique_ptr<FunctionBindData> bindData;
+    if (function.bindFunc) {
+        auto bindInput = ScalarBindFuncInput{children, &function, context};
+        bindData = function.bindFunc(bindInput);
     } else {
-        bindData =
-            std::make_unique<function::FunctionBindData>(LogicalType(function->returnTypeID));
+        bindData = std::make_unique<function::FunctionBindData>(LogicalType(function.returnTypeID));
     }
-    return make_shared<AggregateFunctionExpression>(functionName, std::move(bindData),
-        std::move(children), function->aggregateFunction->clone(), uniqueExpressionName);
+    return std::make_shared<AggregateFunctionExpression>(std::move(function), std::move(bindData),
+        std::move(children), uniqueExpressionName);
 }
 
 std::shared_ptr<Expression> ExpressionBinder::bindMacroExpression(
     const ParsedExpression& parsedExpression, const std::string& macroName) {
-    auto scalarMacroFunction = binder->catalog.getScalarMacroFunction(macroName);
+    auto scalarMacroFunction =
+        context->getCatalog()->getScalarMacroFunction(context->getTransaction(), macroName);
     auto macroExpr = scalarMacroFunction->expression->copy();
     auto parameterVals = scalarMacroFunction->getDefaultParameterVals();
-    auto& parsedFuncExpr = reinterpret_cast<const ParsedFunctionExpression&>(parsedExpression);
+    auto& parsedFuncExpr = parsedExpression.constCast<ParsedFunctionExpression>();
     auto positionalArgs = scalarMacroFunction->getPositionalArgs();
     if (parsedFuncExpr.getNumChildren() > scalarMacroFunction->getNumArgs() ||
         parsedFuncExpr.getNumChildren() < positionalArgs.size()) {
@@ -132,158 +201,6 @@ std::shared_ptr<Expression> ExpressionBinder::bindMacroExpression(
     }
     auto macroParameterReplacer = std::make_unique<MacroParameterReplacer>(parameterVals);
     return bindExpression(*macroParameterReplacer->visit(std::move(macroExpr)));
-}
-
-std::shared_ptr<Expression> ExpressionBinder::staticEvaluate(
-    const std::string& functionName, const expression_vector& children) {
-    assert(children[0]->expressionType == common::LITERAL);
-    auto strVal = ((LiteralExpression*)children[0].get())->getValue()->getValue<std::string>();
-    std::unique_ptr<Value> value;
-    if (functionName == CAST_TO_DATE_FUNC_NAME) {
-        value = std::make_unique<Value>(Date::FromCString(strVal.c_str(), strVal.length()));
-    } else if (functionName == CAST_TO_TIMESTAMP_FUNC_NAME) {
-        value = std::make_unique<Value>(Timestamp::FromCString(strVal.c_str(), strVal.length()));
-    } else {
-        assert(functionName == CAST_TO_INTERVAL_FUNC_NAME);
-        value = std::make_unique<Value>(Interval::FromCString(strVal.c_str(), strVal.length()));
-    }
-    return createLiteralExpression(std::move(value));
-}
-
-// Function rewriting happens when we need to expose internal property access through function so
-// that it becomes read-only or the function involves catalog information. Currently we write
-// Before             |        After
-// ID(a)              |        a._id
-// LABEL(a)           |        LIST_EXTRACT(offset(a), [table names from catalog])
-// LENGTH(e)          |        e._length
-std::shared_ptr<Expression> ExpressionBinder::rewriteFunctionExpression(
-    const parser::ParsedExpression& parsedExpression, const std::string& functionName) {
-    if (functionName == ID_FUNC_NAME) {
-        auto child = bindExpression(*parsedExpression.getChild(0));
-        validateExpectedDataType(*child, std::vector<LogicalTypeID>{LogicalTypeID::NODE,
-                                             LogicalTypeID::REL, LogicalTypeID::STRUCT});
-        return bindInternalIDExpression(child);
-    } else if (functionName == LABEL_FUNC_NAME) {
-        auto child = bindExpression(*parsedExpression.getChild(0));
-        validateExpectedDataType(
-            *child, std::vector<LogicalTypeID>{LogicalTypeID::NODE, LogicalTypeID::REL});
-        return bindLabelFunction(*child);
-    } else if (functionName == LENGTH_FUNC_NAME) {
-        auto child = bindExpression(*parsedExpression.getChild(0));
-        return bindRecursiveJoinLengthFunction(*child);
-    }
-    return nullptr;
-}
-
-std::unique_ptr<Expression> ExpressionBinder::createInternalNodeIDExpression(
-    const Expression& expression) {
-    auto& node = (NodeExpression&)expression;
-    std::unordered_map<table_id_t, property_id_t> propertyIDPerTable;
-    for (auto tableID : node.getTableIDs()) {
-        propertyIDPerTable.insert({tableID, INVALID_PROPERTY_ID});
-    }
-    return std::make_unique<PropertyExpression>(LogicalType(LogicalTypeID::INTERNAL_ID),
-        InternalKeyword::ID, node, std::move(propertyIDPerTable), false /* isPrimaryKey */);
-}
-
-std::shared_ptr<Expression> ExpressionBinder::bindInternalIDExpression(
-    std::shared_ptr<Expression> expression) {
-    if (ExpressionUtil::isNodeVariable(*expression)) {
-        auto& node = (NodeExpression&)*expression;
-        return node.getInternalIDProperty();
-    }
-    if (ExpressionUtil::isRelVariable(*expression)) {
-        return bindRelPropertyExpression(*expression, InternalKeyword::ID);
-    }
-    assert(expression->dataType.getPhysicalType() == common::PhysicalTypeID::STRUCT);
-    auto stringValue =
-        std::make_unique<Value>(LogicalType{LogicalTypeID::STRING}, InternalKeyword::ID);
-    return bindScalarFunctionExpression(
-        expression_vector{expression, createLiteralExpression(std::move(stringValue))},
-        STRUCT_EXTRACT_FUNC_NAME);
-}
-
-static std::vector<std::unique_ptr<Value>> populateLabelValues(
-    std::vector<table_id_t> tableIDs, const catalog::CatalogContent& catalogContent) {
-    auto tableIDsSet = std::unordered_set<table_id_t>(tableIDs.begin(), tableIDs.end());
-    table_id_t maxTableID = *std::max_element(tableIDsSet.begin(), tableIDsSet.end());
-    std::vector<std::unique_ptr<Value>> labels;
-    labels.resize(maxTableID + 1);
-    for (auto i = 0; i < labels.size(); ++i) {
-        if (tableIDsSet.contains(i)) {
-            labels[i] = std::make_unique<Value>(
-                LogicalType{LogicalTypeID::STRING}, catalogContent.getTableName(i));
-        } else {
-            // TODO(Xiyang/Guodong): change to null literal once we support null in LIST type.
-            labels[i] =
-                std::make_unique<Value>(LogicalType{LogicalTypeID::STRING}, std::string(""));
-        }
-    }
-    return labels;
-}
-
-std::shared_ptr<Expression> ExpressionBinder::bindLabelFunction(const Expression& expression) {
-    auto catalogContent = binder->catalog.getReadOnlyVersion();
-    auto varListTypeInfo =
-        std::make_unique<VarListTypeInfo>(std::make_unique<LogicalType>(LogicalTypeID::STRING));
-    auto listType =
-        std::make_unique<LogicalType>(LogicalTypeID::VAR_LIST, std::move(varListTypeInfo));
-    expression_vector children;
-    switch (expression.getDataType().getLogicalTypeID()) {
-    case common::LogicalTypeID::NODE: {
-        auto& node = (NodeExpression&)expression;
-        if (!node.isMultiLabeled()) {
-            auto labelName = catalogContent->getTableName(node.getSingleTableID());
-            return createLiteralExpression(
-                std::make_unique<Value>(LogicalType{LogicalTypeID::STRING}, labelName));
-        }
-        auto nodeTableIDs = catalogContent->getNodeTableIDs();
-        children.push_back(node.getInternalIDProperty());
-        auto labelsValue =
-            std::make_unique<Value>(*listType, populateLabelValues(nodeTableIDs, *catalogContent));
-        children.push_back(createLiteralExpression(std::move(labelsValue)));
-    } break;
-    case common::LogicalTypeID::REL: {
-        auto& rel = (RelExpression&)expression;
-        if (!rel.isMultiLabeled()) {
-            auto labelName = catalogContent->getTableName(rel.getSingleTableID());
-            return createLiteralExpression(
-                std::make_unique<Value>(LogicalType{LogicalTypeID::STRING}, labelName));
-        }
-        auto relTableIDs = catalogContent->getRelTableIDs();
-        children.push_back(rel.getInternalIDProperty());
-        auto labelsValue =
-            std::make_unique<Value>(*listType, populateLabelValues(relTableIDs, *catalogContent));
-        children.push_back(createLiteralExpression(std::move(labelsValue)));
-    } break;
-    default:
-        throw NotImplementedException("ExpressionBinder::bindLabelFunction");
-    }
-    auto execFunc = function::LabelVectorFunction::execFunction;
-    auto bindData =
-        std::make_unique<function::FunctionBindData>(LogicalType(LogicalTypeID::STRING));
-    auto uniqueExpressionName = ScalarFunctionExpression::getUniqueName(LABEL_FUNC_NAME, children);
-    return make_shared<ScalarFunctionExpression>(LABEL_FUNC_NAME, FUNCTION, std::move(bindData),
-        std::move(children), execFunc, nullptr, uniqueExpressionName);
-}
-
-std::unique_ptr<Expression> ExpressionBinder::createInternalLengthExpression(
-    const Expression& expression) {
-    auto& rel = (RelExpression&)expression;
-    std::unordered_map<table_id_t, property_id_t> propertyIDPerTable;
-    for (auto tableID : rel.getTableIDs()) {
-        propertyIDPerTable.insert({tableID, INVALID_PROPERTY_ID});
-    }
-    return std::make_unique<PropertyExpression>(LogicalType(common::LogicalTypeID::INT64),
-        InternalKeyword::LENGTH, rel, std::move(propertyIDPerTable), false /* isPrimaryKey */);
-}
-
-std::shared_ptr<Expression> ExpressionBinder::bindRecursiveJoinLengthFunction(
-    const Expression& expression) {
-    if (expression.getDataType().getLogicalTypeID() != common::LogicalTypeID::RECURSIVE_REL) {
-        return nullptr;
-    }
-    return ((RelExpression&)expression).getLengthExpression();
 }
 
 } // namespace binder

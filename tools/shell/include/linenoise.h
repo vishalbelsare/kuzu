@@ -1,3 +1,4 @@
+#pragma once
 /* linenoise.h -- VERSION 1.0
  *
  * Guerrilla line editing library against the idea that a line editing lib
@@ -36,11 +37,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef __LINENOISE_H
-#define __LINENOISE_H
-
 #include <cstdint>
-#include <string>
 
 #ifdef __cplusplus
 extern "C" {
@@ -48,10 +45,39 @@ extern "C" {
 
 #include <stddef.h>
 
+#define LINENOISE_MAX_LINE 16384
+
 typedef struct linenoiseCompletions {
     size_t len;
     char** cvec;
 } linenoiseCompletions;
+
+enum class tokenType : uint8_t {
+    TOKEN_IDENTIFIER,
+    TOKEN_NUMERIC_CONSTANT,
+    TOKEN_STRING_CONSTANT,
+    TOKEN_OPERATOR,
+    TOKEN_KEYWORD,
+    TOKEN_COMMENT,
+    TOKEN_CONTINUATION,
+    TOKEN_CONTINUATION_SELECTED,
+    TOKEN_BRACKET,
+    TOKEN_ERROR
+};
+
+enum class HighlightingType {
+    KEYWORD,
+    CONSTANT,
+    COMMENT,
+    ERROR,
+    CONTINUATION,
+    CONTINUATION_SELECTED
+};
+
+struct highlightToken {
+    tokenType type{};
+    size_t start = 0;
+};
 
 typedef void(linenoiseCompletionCallback)(const char*, linenoiseCompletions*);
 typedef char*(linenoiseHintsCallback)(const char*, int* color, int* bold);
@@ -61,23 +87,26 @@ void linenoiseSetCompletionCallback(linenoiseCompletionCallback*);
 void linenoiseSetHintsCallback(linenoiseHintsCallback*);
 void linenoiseSetFreeHintsCallback(linenoiseFreeHintsCallback*);
 void linenoiseSetHighlightCallback(linenoiseHighlightCallback*);
+void linenoiseSetErrors(int enabled);
+void linenoiseSetHighlighting(int enabled);
+void linenoiseSetCompletion(int enabled);
 void linenoiseAddCompletion(linenoiseCompletions*, const char*);
 
-char* linenoise(const char* prompt);
+char* linenoise(const char* prompt, const char* continuePrompt, const char* selectedContinuePrompt);
 void linenoiseFree(void* ptr);
 int linenoiseHistoryAdd(const char* line);
 int linenoiseHistorySetMaxLen(int len);
 int linenoiseHistorySave(const char* filename);
 int linenoiseHistoryLoad(const char* filename);
 void linenoiseClearScreen(void);
-void linenoiseSetMultiLine(int ml);
+void linenoiseSetMultiLine(int ml, const char* filename);
 void linenoisePrintKeyCodes(void);
 void linenoiseMaskModeEnable(void);
 void linenoiseMaskModeDisable(void);
 uint32_t linenoiseComputeRenderWidth(const char* buf, size_t len);
+int getColumns(int ifd, int ofd);
+bool cypherComplete(const char* z);
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* __LINENOISE_H */

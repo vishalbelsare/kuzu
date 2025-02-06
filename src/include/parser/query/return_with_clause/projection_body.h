@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/copy_constructors.h"
 #include "parser/expression/parsed_expression.h"
 
 namespace kuzu {
@@ -7,9 +8,10 @@ namespace parser {
 
 class ProjectionBody {
 public:
-    ProjectionBody(
-        bool isDistinct, std::vector<std::unique_ptr<ParsedExpression>> projectionExpressions)
+    ProjectionBody(bool isDistinct,
+        std::vector<std::unique_ptr<ParsedExpression>> projectionExpressions)
         : isDistinct{isDistinct}, projectionExpressions{std::move(projectionExpressions)} {}
+    DELETE_COPY_DEFAULT_MOVE(ProjectionBody);
 
     inline bool getIsDistinct() const { return isDistinct; }
 
@@ -17,13 +19,12 @@ public:
         return projectionExpressions;
     }
 
-    inline void setOrderByExpressions(
-        std::vector<std::unique_ptr<ParsedExpression>> expressions, std::vector<bool> sortOrders) {
+    inline void setOrderByExpressions(std::vector<std::unique_ptr<ParsedExpression>> expressions,
+        std::vector<bool> sortOrders) {
         orderByExpressions = std::move(expressions);
         isAscOrders = std::move(sortOrders);
     }
     inline bool hasOrderByExpressions() const { return !orderByExpressions.empty(); }
-    inline uint32_t numOrderByExpressions() const { return orderByExpressions.size(); }
     inline const std::vector<std::unique_ptr<ParsedExpression>>& getOrderByExpressions() const {
         return orderByExpressions;
     }

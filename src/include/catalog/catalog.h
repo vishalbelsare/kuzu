@@ -1,100 +1,241 @@
 #pragma once
 
-#include <memory>
+#include "catalog/catalog_entry/function_catalog_entry.h"
+#include "catalog/catalog_set.h"
+#include "common/cast.h"
+#include "function/function.h"
 
-#include "catalog/catalog_content.h"
-#include "common/assert.h"
-#include "common/exception.h"
-#include "common/file_utils.h"
-#include "common/utils.h"
-#include "function/aggregate/built_in_aggregate_functions.h"
-#include "function/built_in_table_functions.h"
-#include "function/built_in_vector_functions.h"
-#include "function/scalar_macro_function.h"
-#include "storage/storage_info.h"
-#include "storage/wal/wal.h"
-#include "transaction/transaction.h"
+namespace kuzu::main {
+struct DBConfig;
+} // namespace kuzu::main
 
 namespace kuzu {
+namespace main {
+class AttachedKuzuDatabase;
+} // namespace main
+
+namespace binder {
+struct BoundAlterInfo;
+struct BoundCreateTableInfo;
+struct BoundCreateSequenceInfo;
+} // namespace binder
+
+namespace common {
+class VirtualFileSystem;
+} // namespace common
+
+namespace function {
+struct ScalarMacroFunction;
+} // namespace function
+
+namespace storage {
+class WAL;
+} // namespace storage
+
+namespace transaction {
+class Transaction;
+} // namespace transaction
+
 namespace catalog {
+class TableCatalogEntry;
+class NodeTableCatalogEntry;
+class RelTableCatalogEntry;
+class RelGroupCatalogEntry;
+class FunctionCatalogEntry;
+class SequenceCatalogEntry;
+class IndexCatalogEntry;
 
-class Catalog {
+class KUZU_API Catalog {
+    friend class main::AttachedKuzuDatabase;
+
 public:
+    // This is extended by DuckCatalog and PostgresCatalog.
     Catalog();
+    Catalog(const std::string& directory, common::VirtualFileSystem* vfs);
+    virtual ~Catalog() = default;
 
-    explicit Catalog(storage::WAL* wal);
+    // ----------------------------- Tables ----------------------------
 
-    // TODO(Guodong): Get rid of these two functions.
-    inline CatalogContent* getReadOnlyVersion() const { return catalogContentForReadOnlyTrx.get(); }
-    inline CatalogContent* getWriteVersion() const { return catalogContentForWriteTrx.get(); }
+    // Check if table entry exists.
+    bool containsTable(const transaction::Transaction* transaction, const std::string& tableName,
+        bool useInternal = true) const;
+    // Get table entry with name.
+    TableCatalogEntry* getTableCatalogEntry(const transaction::Transaction* transaction,
+        const std::string& tableName, bool useInternal = true) const;
+    // Get table entry with id.
+    TableCatalogEntry* getTableCatalogEntry(const transaction::Transaction* transaction,
+        common::table_id_t tableID) const;
+    // Get all node table entries.
+    std::vector<NodeTableCatalogEntry*> getNodeTableEntries(
+        const transaction::Transaction* transaction, bool useInternal = true) const;
+    // Get all rel table entries.
+    std::vector<RelTableCatalogEntry*> getRelTableEntries(
+        const transaction::Transaction* transaction, bool useInternal = true) const;
+    // Get all table entries.
+    std::vector<TableCatalogEntry*> getTableEntries(
+        const transaction::Transaction* transaction) const;
 
-    inline function::BuiltInVectorFunctions* getBuiltInVectorFunctions() const {
-        return catalogContentForReadOnlyTrx->builtInVectorFunctions.get();
-    }
-    inline function::BuiltInAggregateFunctions* getBuiltInAggregateFunction() const {
-        return catalogContentForReadOnlyTrx->builtInAggregateFunctions.get();
-    }
-    inline function::BuiltInTableFunctions* getBuiltInTableFunction() const {
-        return catalogContentForReadOnlyTrx->builtInTableFunctions.get();
-    }
+    // Create table catalog entry.
+    CatalogEntry* createTableEntry(transaction::Transaction* transaction,
+        const binder::BoundCreateTableInfo& info);
+    // Drop table entry and all indices within the table.
+    void dropTableEntryAndIndex(transaction::Transaction* transaction, const std::string& name);
+    // Drop table entry with id.
+    void dropTableEntry(transaction::Transaction* transaction, common::table_id_t tableID);
+    // Drop table entry.
+    void dropTableEntry(transaction::Transaction* transaction, const TableCatalogEntry* entry);
+    // Alter table entry.
+    void alterTableEntry(const transaction::Transaction* transaction,
+        const binder::BoundAlterInfo& info);
+    // Alter a rel group entry
+    // alterTableEntry() still needs to be called separately for each member of the group
+    void alterRelGroupEntry(const transaction::Transaction* transaction,
+        const binder::BoundAlterInfo& info);
 
-    void prepareCommitOrRollback(transaction::TransactionAction action);
-    void checkpointInMemory();
+    // ----------------------------- Rel groups ----------------------------
 
-    inline void initCatalogContentForWriteTrxIfNecessary() {
-        if (!catalogContentForWriteTrx) {
-            catalogContentForWriteTrx =
-                std::make_unique<CatalogContent>(*catalogContentForReadOnlyTrx);
-        }
-    }
+    // Check if rel group entry exists.
+    bool containsRelGroup(const transaction::Transaction* transaction,
+        const std::string& name) const;
+    // Get rel group entry with name.
+    RelGroupCatalogEntry* getRelGroupEntry(const transaction::Transaction* transaction,
+        const std::string& name) const;
+    // Get all rel group entries.
+    std::vector<RelGroupCatalogEntry*> getRelGroupEntries(
+        const transaction::Transaction* transaction) const;
 
-    static inline void saveInitialCatalogToFile(const std::string& directory) {
-        std::make_unique<Catalog>()->getReadOnlyVersion()->saveToFile(
-            directory, common::DBFileType::ORIGINAL);
-    }
+    // Create rel group entry.
+    CatalogEntry* createRelGroupEntry(transaction::Transaction* transaction,
+        const binder::BoundCreateTableInfo& info);
+    // Drop rel group entry.
+    void dropRelGroupEntry(transaction::Transaction* transaction, common::oid_t id);
+    // Drop rel group entry.
+    void dropRelGroupEntry(transaction::Transaction* transaction,
+        const RelGroupCatalogEntry* entry);
 
-    common::ExpressionType getFunctionType(const std::string& name) const;
+    // ----------------------------- Sequences ----------------------------
 
-    common::table_id_t addNodeTableSchema(std::string tableName, common::property_id_t primaryKeyId,
-        std::vector<Property> propertyDefinitions);
+    // Check if sequence entry exists.
+    bool containsSequence(const transaction::Transaction* transaction,
+        const std::string& name) const;
+    // Get sequence entry with name.
+    SequenceCatalogEntry* getSequenceEntry(const transaction::Transaction* transaction,
+        const std::string& sequenceName, bool useInternalSeq = true) const;
+    // Get sequence entry with id.
+    SequenceCatalogEntry* getSequenceEntry(const transaction::Transaction* transaction,
+        common::sequence_id_t sequenceID) const;
+    // Get all sequence entries.
+    std::vector<SequenceCatalogEntry*> getSequenceEntries(
+        const transaction::Transaction* transaction) const;
 
-    common::table_id_t addRelTableSchema(std::string tableName, RelMultiplicity relMultiplicity,
-        const std::vector<Property>& propertyDefinitions, common::table_id_t srcTableID,
-        common::table_id_t dstTableID, common::LogicalType srcPKDataType,
-        common::LogicalType dstPKDataType);
+    // Create sequence entry.
+    common::sequence_id_t createSequence(transaction::Transaction* transaction,
+        const binder::BoundCreateSequenceInfo& info);
+    // Drop sequence entry with name.
+    void dropSequence(transaction::Transaction* transaction, const std::string& name);
+    // Drop sequence entry with id.
+    void dropSequence(transaction::Transaction* transaction, common::sequence_id_t sequenceID);
 
-    void dropTableSchema(common::table_id_t tableID);
+    // ----------------------------- Types ----------------------------
 
-    void renameTable(common::table_id_t tableID, const std::string& newName);
+    // Check if type entry exists.
+    bool containsType(const transaction::Transaction* transaction, const std::string& name) const;
+    // Get type entry with name.
+    common::LogicalType getType(const transaction::Transaction*, const std::string& name) const;
 
-    void addProperty(
-        common::table_id_t tableID, const std::string& propertyName, common::LogicalType dataType);
+    // Create type entry.
+    void createType(transaction::Transaction* transaction, std::string name,
+        common::LogicalType type);
 
-    void dropProperty(common::table_id_t tableID, common::property_id_t propertyID);
+    // ----------------------------- Indexes ----------------------------
 
-    void renameProperty(
-        common::table_id_t tableID, common::property_id_t propertyID, const std::string& newName);
+    // Check if index entry exists.
+    bool containsIndex(const transaction::Transaction* transaction, common::table_id_t tableID,
+        const std::string& indexName) const;
+    // Get index entry with name.
+    IndexCatalogEntry* getIndex(const transaction::Transaction* transaction,
+        common::table_id_t tableID, const std::string& indexName) const;
+    // Get all index entries.
+    std::vector<IndexCatalogEntry*> getIndexEntries(
+        const transaction::Transaction* transaction) const;
 
-    std::unordered_set<RelTableSchema*> getAllRelTableSchemasContainBoundTable(
-        common::table_id_t boundTableID) const;
+    // Create index entry.
+    void createIndex(transaction::Transaction* transaction,
+        std::unique_ptr<IndexCatalogEntry> indexCatalogEntry);
+    // Drop all index entries within a table.
+    void dropAllIndexes(transaction::Transaction* transaction, common::table_id_t tableID);
+    // Drop index entry with name.
+    void dropIndex(transaction::Transaction* transaction, common::table_id_t tableID,
+        const std::string& indexName) const;
 
-    void addVectorFunction(std::string name, function::vector_function_definitions definitions);
+    // ----------------------------- Functions ----------------------------
 
-    void addScalarMacroFunction(
-        std::string name, std::unique_ptr<function::ScalarMacroFunction> macro);
+    // Check if function exists.
+    bool containsFunction(const transaction::Transaction* transaction,
+        const std::string& name) const;
+    // Get function entry by name.
+    // Note we cannot cast to FunctionEntry here because result could also be a MacroEntry.
+    CatalogEntry* getFunctionEntry(const transaction::Transaction* transaction,
+        const std::string& name) const;
+    // Get all function entries.
+    std::vector<FunctionCatalogEntry*> getFunctionEntries(
+        const transaction::Transaction* transaction) const;
 
-    // TODO(Ziyi): pass transaction pointer here.
-    inline function::ScalarMacroFunction* getScalarMacroFunction(const std::string& name) const {
-        return catalogContentForReadOnlyTrx->macros.at(name).get();
+    // Add function with name.
+    void addFunction(transaction::Transaction* transaction, CatalogEntryType entryType,
+        std::string name, function::function_set functionSet);
+    // Drop function with name.
+    void dropFunction(transaction::Transaction* transaction, const std::string& name);
+
+    // ----------------------------- Macro ----------------------------
+
+    // Check if macro entry exists.
+    bool containsMacro(const transaction::Transaction* transaction,
+        const std::string& macroName) const;
+    void addScalarMacroFunction(transaction::Transaction* transaction, std::string name,
+        std::unique_ptr<function::ScalarMacroFunction> macro);
+    function::ScalarMacroFunction* getScalarMacroFunction(
+        const transaction::Transaction* transaction, const std::string& name) const;
+    std::vector<std::string> getMacroNames(const transaction::Transaction* transaction) const;
+
+    void checkpoint(const std::string& databasePath, common::VirtualFileSystem* fs) const;
+
+    template<class TARGET>
+    TARGET* ptrCast() {
+        return common::ku_dynamic_cast<TARGET*>(this);
     }
 
 private:
-    inline bool hasUpdates() { return catalogContentForWriteTrx != nullptr; }
+    // The clientContext needs to be used when reading from a remote filesystem which
+    // requires some user-specific configs (e.g. s3 username, password).
+    void readFromFile(const std::string& directory, common::VirtualFileSystem* fs,
+        common::FileVersionType versionType, main::ClientContext* context = nullptr);
+    void saveToFile(const std::string& directory, common::VirtualFileSystem* fs,
+        common::FileVersionType versionType) const;
+
+private:
+    void registerBuiltInFunctions();
+
+    CatalogEntry* createNodeTableEntry(transaction::Transaction* transaction,
+        const binder::BoundCreateTableInfo& info);
+    CatalogEntry* createRelTableEntry(transaction::Transaction* transaction,
+        const binder::BoundCreateTableInfo& info);
+
+    void createSerialSequence(transaction::Transaction* transaction, const TableCatalogEntry* entry,
+        bool isInternal);
+    void dropSerialSequence(transaction::Transaction* transaction, const TableCatalogEntry* entry);
 
 protected:
-    std::unique_ptr<CatalogContent> catalogContentForReadOnlyTrx;
-    std::unique_ptr<CatalogContent> catalogContentForWriteTrx;
-    storage::WAL* wal;
+    std::unique_ptr<CatalogSet> tables;
+
+private:
+    std::unique_ptr<CatalogSet> relGroups;
+    std::unique_ptr<CatalogSet> sequences;
+    std::unique_ptr<CatalogSet> functions;
+    std::unique_ptr<CatalogSet> types;
+    std::unique_ptr<CatalogSet> indexes;
+    std::unique_ptr<CatalogSet> internalTables;
+    std::unique_ptr<CatalogSet> internalSequences;
 };
 
 } // namespace catalog

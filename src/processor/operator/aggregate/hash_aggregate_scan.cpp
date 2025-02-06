@@ -15,26 +15,36 @@ void HashAggregateScan::initLocalStateInternal(ResultSet* resultSet, ExecutionCo
     iota(groupByKeyVectorsColIdxes.begin(), groupByKeyVectorsColIdxes.end(), 0);
 }
 
-bool HashAggregateScan::getNextTuplesInternal(ExecutionContext* context) {
+bool HashAggregateScan::getNextTuplesInternal(ExecutionContext* /*context*/) {
     auto [startOffset, endOffset] = sharedState->getNextRangeToRead();
     if (startOffset >= endOffset) {
         return false;
     }
     auto numRowsToScan = endOffset - startOffset;
-    sharedState->getFactorizedTable()->scan(
-        groupByKeyVectors, startOffset, numRowsToScan, groupByKeyVectorsColIdxes);
+    entries.resize(numRowsToScan);
+    sharedState->scan(entries, groupByKeyVectors, startOffset, numRowsToScan,
+        groupByKeyVectorsColIdxes);
     for (auto pos = 0u; pos < numRowsToScan; ++pos) {
-        auto entry = sharedState->getRow(startOffset + pos);
-        auto offset = sharedState->getFactorizedTable()->getTableSchema()->getColOffset(
-            groupByKeyVectors.size());
+        auto entry = entries[pos];
+        auto offset = sharedState->getTableSchema()->getColOffset(groupByKeyVectors.size());
         for (auto& vector : aggregateVectors) {
-            auto aggState = (AggregateState*)(entry + offset);
+            auto aggState = reinterpret_cast<AggregateState*>(entry + offset);
             writeAggregateResultToVector(*vector, pos, aggState);
             offset += aggState->getStateSize();
         }
     }
     metrics->numOutputTuple.increase(numRowsToScan);
     return true;
+}
+
+double HashAggregateScan::getProgress(ExecutionContext* /*context*/) const {
+    uint64_t totalNumTuples = sharedState->getNumTuples();
+    if (totalNumTuples == 0) {
+        return 0.0;
+    } else if (sharedState->getCurrentOffset() == totalNumTuples) {
+        return 1.0;
+    }
+    return static_cast<double>(sharedState->getCurrentOffset()) / totalNumTuples;
 }
 
 } // namespace processor
